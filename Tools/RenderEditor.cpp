@@ -8,13 +8,234 @@
     Usage: DiamondRoomShot <output.png> [width]
            DiamondRoomShot --audio          (offline DSP self-test)
            DiamondRoomShot --ui             (fader geometry self-test)
+           DiamondRoomShot --drive          (Drive harmonic analysis)
 */
 
+#include <iomanip>
+#include <map>
+
 #include "../Source/PluginProcessor.h"
+#include "../Source/dsp/OneKnobDriver.h"
 #include "../Source/gui/MetalSlider.h"
 
 namespace
 {
+    //==========================================================================
+    /**
+        Measures what the Drive stage actually does to a sine: how much even and
+        odd harmonic content it generates, whether it holds its level once the
+        curve saturates, and whether the tone gets darker rather than brighter.
+    */
+    struct DriveSpectrum
+    {
+        float fundamentalDb = 0.0f;
+        float evenDb = 0.0f;      // 2nd + 4th, relative to the fundamental
+        float oddDb = 0.0f;       // 3rd + 5th, relative to the fundamental
+        float levelChangeDb = 0.0f;
+        float tiltDb = 0.0f;      // high band against low band, on noise
+    };
+
+    DriveSpectrum measureDrive (float driveAmount)
+    {
+        constexpr double rate = 48000.0;
+        constexpr int block = 512;
+        constexpr int fftOrder = 15;
+        constexpr int fftSize = 1 << fftOrder;
+
+        // A bin-centred test tone, so the harmonics land in single bins and
+        // nothing has to be windowed away.
+        constexpr int fundamentalBin = 683;
+        constexpr double toneHz = fundamentalBin * rate / fftSize;
+        constexpr float amplitude = 0.126f;   // -18 dBFS
+
+        dr::OneKnobDriver driver;
+        driver.prepare ({ rate, (juce::uint32) block, 2 });
+        driver.setDrive (driveAmount);
+
+        juce::AudioBuffer<float> buffer (2, block);
+        std::vector<float> captured;
+        captured.reserve ((size_t) fftSize);
+
+        double phase = 0.0;
+        const auto phaseStep = juce::MathConstants<double>::twoPi * toneHz / rate;
+
+        // One buffer of warm-up so the filters and the smoothed gains settle,
+        // then one buffer captured.
+        const auto totalSamples = fftSize * 2;
+
+        for (int written = 0; written < totalSamples; written += block)
+        {
+            for (int n = 0; n < block; ++n)
+            {
+                const auto s = amplitude * (float) std::sin (phase);
+                phase += phaseStep;
+
+                for (int ch = 0; ch < 2; ++ch)
+                    buffer.setSample (ch, n, s);
+            }
+
+            juce::dsp::AudioBlock<float> audioBlock (buffer);
+            driver.process (audioBlock);
+
+            if (written >= fftSize)
+                for (int n = 0; n < block && (int) captured.size() < fftSize; ++n)
+                    captured.push_back (buffer.getSample (0, n));
+        }
+
+        std::vector<float> fftData ((size_t) fftSize * 2, 0.0f);
+        std::copy (captured.begin(), captured.end(), fftData.begin());
+
+        juce::dsp::FFT fft (fftOrder);
+        fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+        auto binMag = [&fftData] (int bin) { return fftData[(size_t) bin]; };
+
+        const auto fundamental = juce::jmax (1.0e-12f, binMag (fundamentalBin));
+        const auto even = binMag (fundamentalBin * 2) + binMag (fundamentalBin * 4);
+        const auto odd  = binMag (fundamentalBin * 3) + binMag (fundamentalBin * 5);
+
+        float weighted = 0.0f, total = 0.0f;
+
+        for (int bin = 1; bin < fftSize / 2; ++bin)
+        {
+            const auto mag = binMag (bin);
+            weighted += mag * (float) (bin * rate / fftSize);
+            total += mag;
+        }
+
+        double sumSquares = 0.0;
+        for (auto s : captured)
+            sumSquares += (double) s * s;
+
+        const auto outRms = (float) std::sqrt (sumSquares / juce::jmax<size_t> (1, captured.size()));
+        const auto inRms = amplitude * juce::MathConstants<float>::sqrt2 * 0.5f;
+
+        DriveSpectrum result;
+        result.fundamentalDb = juce::Decibels::gainToDecibels (fundamental, -144.0f);
+        result.evenDb = juce::Decibels::gainToDecibels (even / fundamental, -144.0f);
+        result.oddDb  = juce::Decibels::gainToDecibels (odd / fundamental, -144.0f);
+        result.levelChangeDb = juce::Decibels::gainToDecibels (outRms / inRms, -144.0f);
+        juce::ignoreUnused (weighted, total);
+        return result;
+    }
+
+    /** High-band against low-band energy on noise, i.e. how bright the stage is. */
+    float measureTilt (float driveAmount)
+    {
+        constexpr double rate = 48000.0;
+        constexpr int block = 512;
+        constexpr int fftOrder = 15;
+        constexpr int fftSize = 1 << fftOrder;
+
+        dr::OneKnobDriver driver;
+        driver.prepare ({ rate, (juce::uint32) block, 2 });
+        driver.setDrive (driveAmount);
+
+        juce::AudioBuffer<float> buffer (2, block);
+        juce::Random random (0x0d217e);
+        std::vector<float> captured;
+        captured.reserve ((size_t) fftSize);
+
+        for (int written = 0; written < fftSize * 2; written += block)
+        {
+            for (int n = 0; n < block; ++n)
+            {
+                const auto s = 0.126f * (random.nextFloat() * 2.0f - 1.0f);
+
+                for (int ch = 0; ch < 2; ++ch)
+                    buffer.setSample (ch, n, s);
+            }
+
+            juce::dsp::AudioBlock<float> audioBlock (buffer);
+            driver.process (audioBlock);
+
+            if (written >= fftSize)
+                for (int n = 0; n < block && (int) captured.size() < fftSize; ++n)
+                    captured.push_back (buffer.getSample (0, n));
+        }
+
+        std::vector<float> fftData ((size_t) fftSize * 2, 0.0f);
+        std::copy (captured.begin(), captured.end(), fftData.begin());
+
+        juce::dsp::FFT fft (fftOrder);
+        fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+        auto bandEnergy = [&fftData, fftSize, rate] (double lowHz, double highHz)
+        {
+            const auto firstBin = (int) (lowHz * fftSize / rate);
+            const auto lastBin  = (int) (highHz * fftSize / rate);
+
+            double sum = 0.0;
+            for (int bin = firstBin; bin <= lastBin; ++bin)
+                sum += (double) fftData[(size_t) bin] * fftData[(size_t) bin];
+
+            return sum;
+        };
+
+        const auto low = bandEnergy (100.0, 1000.0);
+        const auto high = bandEnergy (6000.0, 16000.0);
+
+        return (float) (10.0 * std::log10 (juce::jmax (1.0e-30, high)
+                                             / juce::jmax (1.0e-30, low)));
+    }
+
+    int runDriveSelfTest()
+    {
+        std::cout << "drive   even(2+4)   odd(3+5)   level      HF tilt" << std::endl;
+
+        std::map<int, DriveSpectrum> results;
+
+        for (const auto amount : { 0, 3, 6, 10 })
+        {
+            auto spectrum = measureDrive ((float) amount);
+            spectrum.tiltDb = measureTilt ((float) amount);
+            results[amount] = spectrum;
+
+            std::cout << "  " << std::setw (2) << amount
+                      << "   " << std::setw (8) << juce::String (spectrum.evenDb, 1).toStdString()
+                      << "   " << std::setw (8) << juce::String (spectrum.oddDb, 1).toStdString()
+                      << "   " << std::setw (7) << (juce::String (spectrum.levelChangeDb, 1) + " dB").toStdString()
+                      << "   " << std::setw (8) << (juce::String (spectrum.tiltDb, 1) + " dB").toStdString()
+                      << std::endl;
+        }
+
+        bool ok = true;
+
+        auto fail = [&ok] (const juce::String& why)
+        {
+            std::cerr << "  FAIL: " << why << std::endl;
+            ok = false;
+        };
+
+        const auto& clean = results[0];
+        const auto& driven = results[10];
+
+        if (clean.evenDb > -60.0f || clean.oddDb > -60.0f)
+            fail ("stage is not clean at Drive 0");
+
+        // Both families have to be there: odd from the curve, even from its
+        // asymmetry. Without the bias the even column collapses.
+        if (driven.evenDb < -40.0f)
+            fail ("no even harmonics at Drive 10");
+
+        if (driven.oddDb < -40.0f)
+            fail ("no odd harmonics at Drive 10");
+
+        // Saturating must not cost level, which is what a makeup derived from
+        // the input gain rather than the shaper's response would do.
+        if (std::abs (driven.levelChangeDb) > 6.0f)
+            fail ("level moves " + juce::String (driven.levelChangeDb, 1) + " dB at Drive 10");
+
+        // Measured on noise, not on the sine: adding harmonics to a sine
+        // raises its centroid no matter how dark the stage is.
+        if (driven.tiltDb > clean.tiltDb - 6.0f)
+            fail ("driving does not darken the tone, tilt "
+                    + juce::String (clean.tiltDb, 1) + " -> " + juce::String (driven.tiltDb, 1) + " dB");
+
+        std::cout << (ok ? "PASS" : "FAILED") << std::endl;
+        return ok ? 0 : 1;
+    }
+
     //==========================================================================
     /**
         Checks that what a fader draws and what it drags agree. JUCE derives the
@@ -317,6 +538,9 @@ int main (int argc, char* argv[])
 
     if (argc > 1 && juce::String (argv[1]) == "--ui")
         return runUiSelfTest();
+
+    if (argc > 1 && juce::String (argv[1]) == "--drive")
+        return runDriveSelfTest();
 
     const juce::File output = argc > 1
         ? juce::File::getCurrentWorkingDirectory().getChildFile (juce::String (argv[1]))

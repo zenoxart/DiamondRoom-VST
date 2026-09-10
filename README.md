@@ -12,16 +12,20 @@ FL Studio, and does not host or require the original plugins.
 Rebuilt from the Patcher routing:
 
 ```
-in ──┬─────────────────────────────────────────────── dry ──┐
-     │                                                      │
-     └─ Driver ─┬─ H-Reverb ──── H-Mix ────┐                 │
-                ├─ MannyM Reverb ─ Mix ────┤                 │
-                ├─ Valhalla Verb ─ Mix ────┼─ Sum ─┬─────────┤
-                └─ True Verb ───── Mix ────┘       │         │
-                                                   └─ Tube ──┤
-                                                             │
-                                                    Mix (dry/wet) ─ out
+in ─ Driver ─┬───────────────────────────────────── dry ──┐
+             │                                            │
+             ├─ H-Reverb ──── H-Mix ────┐                  │
+             ├─ MannyM Reverb ─ Mix ────┤                  │
+             ├─ Valhalla Verb ─ Mix ────┼─ Sum ─┬──────────┤
+             └─ True Verb ───── Mix ────┘       │          │
+                                                └─ Tube ───┤
+                                                           │
+                                                  Mix (dry/wet) ─ out
 ```
+
+The Patcher fed only the reverbs from the Driver, leaving the dial inaudible at
+anything but a very wet Mix. Here it sits ahead of the split, so Drive colours
+the whole signal.
 
 `Tube` is a parallel blend: at 0 the sum passes clean, at 10 it is entirely the
 PuigChild path - which is how the two branches into the final balance node in
@@ -31,7 +35,7 @@ the Patcher graph behave.
 
 | Control | Range | What it does |
 | --- | --- | --- |
-| Drive | 0–10 | Asymmetric tube overdrive into the reverbs, 4x oversampled |
+| Drive | 0–10 | Asymmetric valve overdrive over the whole signal: even and odd harmonics, progressively darker, 4x oversampled |
 | H-Reverb Tone | ±10 | Tilt around 900 Hz on the H-Reverb tail |
 | H-Reverb Time | 0–10 | RT60, 0.25 s to 10 s (preset value 3.24 s ≈ 6.9) |
 | MannyM Distortion | 0–10 | Saturation on the chamber output |
@@ -83,6 +87,7 @@ cmake -B build -DDIAMONDROOM_BUILD_SCREENSHOT=ON
 cmake --build build --config Release --target DiamondRoomShot
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --audio
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --ui
+./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --drive
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe panel.png 2001
 ```
 
@@ -90,6 +95,11 @@ cmake --build build --config Release --target DiamondRoomShot
 several window sizes. That one is worth keeping: a `Slider` subclass that
 overrides `resized()` without calling the base leaves JUCE's draggable region
 one pixel wide, and the fader becomes impossible to set.
+
+`--drive` runs an FFT over the Drive stage and reports even and odd harmonic
+content, level change, and high-band tilt at several settings. Tone has to be
+measured on noise, not on a sine: adding harmonics to a sine raises its spectral
+centroid however dark the stage is.
 
 ## Layout
 

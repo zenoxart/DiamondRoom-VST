@@ -31,9 +31,11 @@ void DiamondRoomAudioProcessor::prepareToPlay (double sampleRate, int samplesPer
         buffer->clear();
     }
 
-    // The driver and the tube stage both oversample, so the wet path runs late.
-    dryDelayLength = (int) std::ceil (driver.getLatencySamples() + tube.getLatencySamples());
-    setLatencySamples (dryDelayLength);
+    // The Driver now sits ahead of the split, so both branches carry its
+    // latency and only the tube stage has to be compensated for on the dry
+    // side. The host still has to be told about both.
+    dryDelayLength = (int) std::ceil (tube.getLatencySamples());
+    setLatencySamples ((int) std::ceil (driver.getLatencySamples()) + dryDelayLength);
 
     dryDelayBuffer.setSize (2, juce::jmax (1, dryDelayLength + 1), false, false, true);
     dryDelayBuffer.clear();
@@ -149,15 +151,20 @@ void DiamondRoomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         dest.copyFrom (1, 0, buffer, numInputs > 1 ? 1 : 0, 0, numSamples);
     };
 
-    copyIn (dryBuffer);
     copyIn (drivenBuffer);
 
-    // -- 1. Driver ---------------------------------------------------------
+    // -- 1. Driver, ahead of the dry/wet split -----------------------------
+    // The Patcher graph fed only the reverbs from the Driver, which left the
+    // dial inaudible at anything but a very wet Mix. Here it colours the whole
+    // signal, so Drive works as a tone control for the plugin rather than for
+    // the reverb bus alone.
     {
         juce::dsp::AudioBlock<float> block (drivenBuffer.getArrayOfWritePointers(),
                                             2, (size_t) numSamples);
         driver.process (block);
     }
+
+    dryBuffer.makeCopyOf (drivenBuffer, true);
 
     // -- 2. the four reverbs in parallel, each with its own mix ------------
     wetBuffer.clear();
