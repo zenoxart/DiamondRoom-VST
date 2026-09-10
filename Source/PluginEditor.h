@@ -4,18 +4,21 @@
 #include "gui/MetalKnob.h"
 #include "gui/MetalSlider.h"
 #include "gui/PanelSection.h"
+#include "gui/RackButton.h"
 #include "gui/Theme.h"
 
 //==============================================================================
 /**
     The 4U rack panel: weathered steel, six bolted-on plates, and the same
-    control set the Patcher surface exposes.
+    control set the Patcher surface exposes, with preset, undo and window size
+    controls along the top rail.
 */
-class DiamondRoomAudioProcessorEditor final : public juce::AudioProcessorEditor
+class DiamondRoomAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                              private juce::ChangeListener
 {
 public:
     explicit DiamondRoomAudioProcessorEditor (DiamondRoomAudioProcessor&);
-    ~DiamondRoomAudioProcessorEditor() override = default;
+    ~DiamondRoomAudioProcessorEditor() override;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -45,12 +48,27 @@ private:
         std::unique_ptr<ButtonAttachment> ledAttachment;
     };
 
+    void changeListenerCallback (juce::ChangeBroadcaster* source) override;
+
     void buildBackground();
     void attachStrip (ReverbStrip& strip, const char* topId, const char* bottomId,
                       const char* mixId, const char* onId);
     void layoutStrip (ReverbStrip& strip, juce::Rectangle<int> panelBounds, float scale);
     void drawRackFrame (juce::Graphics& g, float scale);
     void drawTitle (juce::Graphics& g, float scale);
+
+    /** Every control begins an undo transaction when its gesture starts, so
+        one drag is one step rather than a hundred. */
+    void markUndoPoint (const juce::String& description);
+    void wireUndoTransactions();
+
+    void updatePresetDisplay();
+    void updateUndoButtons();
+    void showPresetMenu();
+    void showSettingsMenu();
+    void showSavePresetDialog();
+    void showMessage (const juce::String& title, const juce::String& message);
+    void applyWidth (int width);
 
     DiamondRoomAudioProcessor& processor;
 
@@ -64,7 +82,15 @@ private:
     ReverbStrip valStrip   { "Valhalla Reverb","HighCut",    "0",   "10",  "Decay",    "0", "10", "Valhalla Mix" };
     ReverbStrip trueStrip  { "True Verb",      "Distance",   "0",   "10",  "Roomsize", "0", "10", "TrueVerb Mix" };
 
+    dr::RackButton undoButton   { dr::RackButton::Glyph::undo };
+    dr::RackButton redoButton   { dr::RackButton::Glyph::redo };
+    dr::RackButton prevPreset   { dr::RackButton::Glyph::previous };
+    dr::RackButton nextPreset   { dr::RackButton::Glyph::next };
+    dr::RackButton presetPlate  { dr::RackButton::Glyph::none, "Diamond Room" };
+    dr::RackButton settingsButton { dr::RackButton::Glyph::gear };
+
     std::unique_ptr<SliderAttachment> driveAttachment, tubeAttachment, mixAttachment;
+    std::unique_ptr<juce::AlertWindow> dialog;
 
     juce::Image panelTexture, plateTexture, railTexture;
     int textureWidth = 0, textureHeight = 0;

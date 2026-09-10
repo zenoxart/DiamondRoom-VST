@@ -49,7 +49,27 @@ the Patcher graph behave.
 | H-Mix … TrueVerb Mix | 0–100 % | Level of each reverb into the sum |
 | Mix | 0–100 % | Master dry/wet |
 
-Defaults are taken from the presets saved in the `.fst`: H-Reverb "Focused Lead
+Along the top rail: undo and redo, preset stepping either side of the preset
+name, and a settings gear. Clicking the preset name opens the full list, plus
+**Save as...**, **Delete** for user presets, and **Show preset folder**.
+
+## Presets
+
+Eight factory presets ship with the plugin, from **Subtle Air** through the
+**Diamond Room** default to **Crushed Verb**. User presets are written to
+`%APPDATA%/DiamondRoom/Presets` as `.drpreset` XML and appear under **User** in
+the same menu. A preset whose controls have since been moved is shown with a
+trailing asterisk.
+
+The window size is remembered in the plugin state, so a session reopens at the
+size it was closed at. The gear menu offers five sizes, and the window can also
+be dragged from its corner; the aspect ratio is fixed.
+
+Undo and redo cover parameter moves, reverb on/off switches and preset loads.
+One gesture is one step: dragging a fader from end to end is a single undo, not
+a hundred.
+
+Factory defaults are taken from the presets saved in the `.fst`: H-Reverb "Focused Lead
 Vocal", MannyM "Dave Aron - Rock Vocal Hall 1", Valhalla "VaViRb_Vox_9" (Concert
 Hall / 1970s), TrueVerb "Vocal spread".
 
@@ -88,6 +108,7 @@ cmake --build build --config Release --target DiamondRoomShot
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --audio
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --ui
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --drive
+./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --presets
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe panel.png 2001
 ```
 
@@ -101,13 +122,17 @@ content, level change, and high-band tilt at several settings. Tone has to be
 measured on noise, not on a sine: adding harmonics to a sine raises its spectral
 centroid however dark the stage is.
 
+`--presets` round-trips the preset store, checks undo and redo restore parameter
+values, and checks the remembered window size survives a state save and reload.
+
 ## Layout
 
 ```
 Source/
   PluginProcessor.*     chain wiring, dry-delay compensation, master mix
-  PluginEditor.*        rack panel layout and frame
+  PluginEditor.*        rack panel layout, frame, preset and settings menus
   Parameters.*          parameter layout and cached atomics
+  PresetManager.*       factory tables and the user preset store
   dsp/
     DspUtils.h          filters, delay lines, all-passes, FDN mixing
     OneKnobDriver.*     Drive
@@ -119,4 +144,5 @@ Source/
   gui/
     Theme.*             procedural steel, rust, knob and cap artwork
     MetalKnob.*         MetalSlider.*      PanelSection.*
+    RackButton.*        top rail switches and the preset name plate
 ```

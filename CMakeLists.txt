@@ -30,6 +30,7 @@ target_sources(DiamondRoom PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/Parameters.cpp
+    Source/PresetManager.cpp
     Source/dsp/OneKnobDriver.cpp
     Source/dsp/HReverb.cpp
     Source/dsp/MannyMReverb.cpp
@@ -40,6 +41,7 @@ target_sources(DiamondRoom PRIVATE
     Source/gui/MetalKnob.cpp
     Source/gui/MetalSlider.cpp
     Source/gui/PanelSection.cpp
+    Source/gui/RackButton.cpp
 )
 
 target_compile_definitions(DiamondRoom PUBLIC
@@ -74,5 +76,8 @@ if (DIAMONDROOM_BUILD_SCREENSHOT)
         juce::juce_recommended_config_flags)
     target_compile_definitions(DiamondRoomShot PRIVATE
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0)
+        JUCE_USE_CURL=0
+        # The self-tests have to let APVTS's timer run to see parameter
+        # changes reach the value tree. Only the test tool needs this.
+        JUCE_MODAL_LOOPS_PERMITTED=1)
 endif()

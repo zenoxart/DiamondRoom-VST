@@ -16,6 +16,24 @@ namespace
 
     constexpr int railWidth = 100;
 
+    // Popup menu item ids. Presets are offset so they cannot collide with the
+    // fixed commands.
+    constexpr int saveItem = 1, deleteItem = 2, revealItem = 3;
+    constexpr int sizeBase = 100, factoryBase = 1000, userBase = 2000;
+
+    struct SizeOption { const char* label; int width; };
+
+    constexpr SizeOption sizeOptions[]
+    {
+        { "Small",       900 },
+        { "Medium",     1100 },
+        { "Large",      1300 },
+        { "Extra large", 1600 },
+        { "Full",       dr::theme::designWidth },
+    };
+
+    constexpr size_t numSizeOptions = std::size (sizeOptions);
+
     juce::Rectangle<int> scaleRect (juce::Rectangle<int> design, float scale)
     {
         return { juce::roundToInt ((float) design.getX() * scale),
@@ -61,11 +79,103 @@ DiamondRoomAudioProcessorEditor::DiamondRoomAudioProcessorEditor (DiamondRoomAud
     attachStrip (valStrip,   params::vHighCut, params::vDecay,     params::vMix, params::vOn);
     attachStrip (trueStrip,  params::tDistance, params::tRoomsize, params::tMix, params::tOn);
 
+    for (auto* button : { &undoButton, &redoButton, &prevPreset, &nextPreset,
+                          &presetPlate, &settingsButton })
+        addAndMakeVisible (button);
+
+    undoButton.onClick = [this]
+    {
+        processor.getUndoManager().undo();
+        updateUndoButtons();
+    };
+
+    redoButton.onClick = [this]
+    {
+        processor.getUndoManager().redo();
+        updateUndoButtons();
+    };
+
+    prevPreset.onClick     = [this] { processor.getPresetManager().loadPrevious(); };
+    nextPreset.onClick     = [this] { processor.getPresetManager().loadNext(); };
+    presetPlate.onClick    = [this] { showPresetMenu(); };
+    settingsButton.onClick = [this] { showSettingsMenu(); };
+
+    processor.getPresetManager().addChangeListener (this);
+    processor.getUndoManager().addChangeListener (this);
+
+    wireUndoTransactions();
+    updatePresetDisplay();
+    updateUndoButtons();
+
     setResizable (true, true);
     getConstrainer()->setFixedAspectRatio ((double) theme::designWidth / (double) theme::designHeight);
     setResizeLimits (900, juce::roundToInt (900.0 * theme::designHeight / theme::designWidth),
                      theme::designWidth, theme::designHeight);
-    setSize (1300, juce::roundToInt (1300.0 * theme::designHeight / theme::designWidth));
+
+    const auto savedWidth = processor.getSavedEditorWidth();
+    applyWidth (savedWidth > 0 ? savedWidth : 1300);
+}
+
+DiamondRoomAudioProcessorEditor::~DiamondRoomAudioProcessorEditor()
+{
+    processor.getPresetManager().removeChangeListener (this);
+    processor.getUndoManager().removeChangeListener (this);
+}
+
+//==============================================================================
+void DiamondRoomAudioProcessorEditor::applyWidth (int width)
+{
+    const auto clamped = juce::jlimit (900, theme::designWidth, width);
+    setSize (clamped, juce::roundToInt ((double) clamped * theme::designHeight / theme::designWidth));
+}
+
+void DiamondRoomAudioProcessorEditor::markUndoPoint (const juce::String& description)
+{
+    processor.getUndoManager().beginNewTransaction (description);
+}
+
+void DiamondRoomAudioProcessorEditor::wireUndoTransactions()
+{
+    // One gesture is one undo step. Without this every intermediate value the
+    // parameter passes through on the way would become its own step.
+    auto wireSlider = [this] (juce::Slider& slider, const juce::String& name)
+    {
+        slider.onDragStart = [this, name] { markUndoPoint (name); };
+    };
+
+    wireSlider (driveKnob, "Drive");
+    wireSlider (tubeKnob, "Tube");
+    wireSlider (masterMix, "Mix");
+
+    for (auto* strip : { &hStrip, &mannyStrip, &valStrip, &trueStrip })
+    {
+        wireSlider (strip->topKnob, strip->topKnob.getName());
+        wireSlider (strip->bottomKnob, strip->bottomKnob.getName());
+        wireSlider (strip->mix, strip->mix.getName());
+
+        strip->panel.getLed().onClick = [this] { markUndoPoint ("Reverb on/off"); };
+    }
+}
+
+//==============================================================================
+void DiamondRoomAudioProcessorEditor::changeListenerCallback (juce::ChangeBroadcaster* source)
+{
+    if (source == &processor.getPresetManager())
+        updatePresetDisplay();
+    else if (source == &processor.getUndoManager())
+        updateUndoButtons();
+}
+
+void DiamondRoomAudioProcessorEditor::updatePresetDisplay()
+{
+    presetPlate.setText (processor.getPresetManager().getDisplayName());
+}
+
+void DiamondRoomAudioProcessorEditor::updateUndoButtons()
+{
+    auto& undoManager = processor.getUndoManager();
+    undoButton.setEnabled (undoManager.canUndo());
+    redoButton.setEnabled (undoManager.canRedo());
 }
 
 void DiamondRoomAudioProcessorEditor::attachStrip (ReverbStrip& strip, const char* topId,
@@ -78,6 +188,141 @@ void DiamondRoomAudioProcessorEditor::attachStrip (ReverbStrip& strip, const cha
     strip.bottomAttachment = std::make_unique<SliderAttachment> (state, bottomId, strip.bottomKnob);
     strip.mixAttachment    = std::make_unique<SliderAttachment> (state, mixId, strip.mix);
     strip.ledAttachment    = std::make_unique<ButtonAttachment> (state, onId, strip.panel.getLed());
+}
+
+//==============================================================================
+void DiamondRoomAudioProcessorEditor::showMessage (const juce::String& title,
+                                                   const juce::String& message)
+{
+    juce::AlertWindow::showAsync (
+        juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
+                                 .withTitle (title)
+                                 .withMessage (message)
+                                 .withButton ("OK")
+                                 .withAssociatedComponent (this),
+        nullptr);
+}
+
+void DiamondRoomAudioProcessorEditor::showPresetMenu()
+{
+    auto& presets = processor.getPresetManager();
+    const auto current = presets.getCurrentPresetName();
+    const auto factoryNames = presets.getFactoryPresetNames();
+    const auto userNames = presets.getUserPresetNames();
+
+    juce::PopupMenu menu, factoryMenu, userMenu;
+
+    for (int i = 0; i < factoryNames.size(); ++i)
+        factoryMenu.addItem (factoryBase + i, factoryNames[i], true, factoryNames[i] == current);
+
+    for (int i = 0; i < userNames.size(); ++i)
+        userMenu.addItem (userBase + i, userNames[i], true, userNames[i] == current);
+
+    menu.addSubMenu ("Factory", factoryMenu);
+
+    if (userNames.isEmpty())
+        menu.addItem (-1, "User (none saved)", false);
+    else
+        menu.addSubMenu ("User", userMenu);
+
+    menu.addSeparator();
+    menu.addItem (saveItem, "Save as...");
+
+    if (presets.isUserPreset (current))
+        menu.addItem (deleteItem, "Delete " + current.quoted());
+
+    menu.addItem (revealItem, "Show preset folder");
+
+    juce::Component::SafePointer<DiamondRoomAudioProcessorEditor> safe (this);
+
+    menu.showMenuAsync (
+        juce::PopupMenu::Options().withTargetComponent (&presetPlate).withMinimumWidth (220),
+        [safe, factoryNames, userNames, current] (int result)
+        {
+            if (safe == nullptr || result == 0)
+                return;
+
+            auto& manager = safe->processor.getPresetManager();
+
+            if (result >= userBase)
+                manager.loadPreset (userNames[result - userBase]);
+            else if (result >= factoryBase)
+                manager.loadPreset (factoryNames[result - factoryBase]);
+            else if (result == saveItem)
+                safe->showSavePresetDialog();
+            else if (result == deleteItem)
+            {
+                const auto outcome = manager.deleteUserPreset (current);
+
+                if (outcome.failed())
+                    safe->showMessage ("Could not delete preset", outcome.getErrorMessage());
+            }
+            else if (result == revealItem)
+                dr::PresetManager::getUserPresetDirectory().revealToUser();
+        });
+}
+
+void DiamondRoomAudioProcessorEditor::showSavePresetDialog()
+{
+    dialog = std::make_unique<juce::AlertWindow> ("Save preset",
+                                                  "Name for this preset:",
+                                                  juce::MessageBoxIconType::NoIcon,
+                                                  this);
+    dialog->addTextEditor ("name", processor.getPresetManager().getCurrentPresetName());
+    dialog->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    dialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<DiamondRoomAudioProcessorEditor> safe (this);
+
+    dialog->enterModalState (true, juce::ModalCallbackFunction::create (
+        [safe] (int result)
+        {
+            // The window is owned by the editor, so it can outlive neither.
+            if (safe == nullptr || safe->dialog == nullptr)
+                return;
+
+            const auto name = safe->dialog->getTextEditorContents ("name");
+            safe->dialog.reset();
+
+            if (result != 1)
+                return;
+
+            const auto outcome = safe->processor.getPresetManager().saveUserPreset (name);
+
+            if (outcome.failed())
+                safe->showMessage ("Could not save preset", outcome.getErrorMessage());
+        }), false);
+}
+
+void DiamondRoomAudioProcessorEditor::showSettingsMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Window size");
+
+    for (int i = 0; i < (int) numSizeOptions; ++i)
+    {
+        const auto width = sizeOptions[i].width;
+        const auto height = juce::roundToInt ((double) width * theme::designHeight
+                                                / theme::designWidth);
+
+        menu.addItem (sizeBase + i,
+                      juce::String (sizeOptions[i].label) + "  -  "
+                        + juce::String (width) + " x " + juce::String (height),
+                      true, getWidth() == width);
+    }
+
+    menu.addSeparator();
+    menu.addItem (-1, "The window can also be dragged from its corner", false);
+
+    juce::Component::SafePointer<DiamondRoomAudioProcessorEditor> safe (this);
+
+    menu.showMenuAsync (
+        juce::PopupMenu::Options().withTargetComponent (&settingsButton).withMinimumWidth (260),
+        [safe] (int result)
+        {
+            if (safe != nullptr && result >= sizeBase && result < sizeBase + (int) numSizeOptions)
+                safe->applyWidth (sizeOptions[result - sizeBase].width);
+        });
 }
 
 //==============================================================================
@@ -129,10 +374,25 @@ void DiamondRoomAudioProcessorEditor::resized()
     masterMix.setDesignScale (scale);
     masterMix.setBounds (scaleRect ({ 255, 558, 1490, 152 }, scale));
 
+    // Top rail: undo/redo and preset stepping to the left of the title, the
+    // settings gear to the right of it.
+    for (auto* button : { &undoButton, &redoButton, &prevPreset, &nextPreset,
+                          &presetPlate, &settingsButton })
+        button->setDesignScale (scale);
+
+    undoButton.setBounds     (scaleRect ({ 118,  30,  56, 56 }, scale));
+    redoButton.setBounds     (scaleRect ({ 182,  30,  56, 56 }, scale));
+    prevPreset.setBounds     (scaleRect ({ 258,  30,  44, 56 }, scale));
+    presetPlate.setBounds    (scaleRect ({ 302,  30, 182, 56 }, scale));
+    nextPreset.setBounds     (scaleRect ({ 484,  30,  44, 56 }, scale));
+    settingsButton.setBounds (scaleRect ({ 1834, 30,  56, 56 }, scale));
+
     layoutStrip (hStrip,     hPanelArea,     scale);
     layoutStrip (mannyStrip, mannyPanelArea, scale);
     layoutStrip (valStrip,   valPanelArea,   scale);
     layoutStrip (trueStrip,  truePanelArea,  scale);
+
+    processor.setSavedEditorWidth (getWidth());
 }
 
 void DiamondRoomAudioProcessorEditor::layoutStrip (ReverbStrip& strip,

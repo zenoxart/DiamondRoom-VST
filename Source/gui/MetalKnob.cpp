@@ -18,6 +18,7 @@ MetalKnob::MetalKnob (const juce::String& captionIn,
                       const juce::String& maxLabelIn)
     : caption (captionIn), minLabel (minLabelIn), maxLabel (maxLabelIn)
 {
+    setName (caption);
     setSliderStyle (juce::Slider::RotaryVerticalDrag);
     setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     setRotaryParameters (startAngle, endAngle, true);

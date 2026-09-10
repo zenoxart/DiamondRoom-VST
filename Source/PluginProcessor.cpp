@@ -6,7 +6,7 @@ DiamondRoomAudioProcessor::DiamondRoomAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      state (*this, nullptr, "DiamondRoom", dr::params::createLayout())
+      state (*this, &undoManager, "DiamondRoom", dr::params::createLayout())
 {
     cache.attach (state);
 }
@@ -294,6 +294,18 @@ void DiamondRoomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 juce::AudioProcessorEditor* DiamondRoomAudioProcessor::createEditor()
 {
     return new DiamondRoomAudioProcessorEditor (*this);
+}
+
+int DiamondRoomAudioProcessor::getSavedEditorWidth() const
+{
+    return (int) state.state.getProperty ("uiWidth", 0);
+}
+
+void DiamondRoomAudioProcessor::setSavedEditorWidth (int width)
+{
+    // Deliberately not through the undo manager: resizing the window is not an
+    // edit to the patch.
+    state.state.setProperty ("uiWidth", width, nullptr);
 }
 
 void DiamondRoomAudioProcessor::getStateInformation (juce::MemoryBlock& destData)

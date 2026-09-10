@@ -9,6 +9,7 @@
            DiamondRoomShot --audio          (offline DSP self-test)
            DiamondRoomShot --ui             (fader geometry self-test)
            DiamondRoomShot --drive          (Drive harmonic analysis)
+           DiamondRoomShot --presets        (presets, undo/redo, saved size)
 */
 
 #include <iomanip>
@@ -231,6 +232,124 @@ namespace
         if (driven.tiltDb > clean.tiltDb - 6.0f)
             fail ("driving does not darken the tone, tilt "
                     + juce::String (clean.tiltDb, 1) + " -> " + juce::String (driven.tiltDb, 1) + " dB");
+
+        std::cout << (ok ? "PASS" : "FAILED") << std::endl;
+        return ok ? 0 : 1;
+    }
+
+    //==========================================================================
+    /** APVTS flushes parameters into its tree on a timer, so the message loop
+        has to be given a moment to run before the tree reflects a change. */
+    void pump (juce::AudioProcessorValueTreeState&)
+    {
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
+    }
+
+    float readParameter (juce::AudioProcessorValueTreeState& state, const char* id)
+    {
+        if (auto* raw = state.getRawParameterValue (id))
+            return raw->load();
+
+        return 0.0f;
+    }
+
+    void writeParameter (juce::AudioProcessorValueTreeState& state, const char* id, float value)
+    {
+        if (auto* parameter = state.getParameter (id))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+    }
+
+    int runPresetSelfTest()
+    {
+        DiamondRoomAudioProcessor processor;
+        processor.prepareToPlay (48000.0, 512);
+
+        auto& state = processor.getState();
+        auto& presets = processor.getPresetManager();
+        auto& undoManager = processor.getUndoManager();
+
+        bool ok = true;
+
+        auto check = [&ok] (bool condition, const juce::String& what)
+        {
+            std::cout << "  " << (condition ? "ok   " : "FAIL ") << what << std::endl;
+            ok = ok && condition;
+        };
+
+        // -- factory presets ------------------------------------------------
+        presets.loadPreset ("Crushed Verb");
+        pump (state);
+        check (juce::approximatelyEqual (readParameter (state, dr::params::drive), 10.0f),
+               "Crushed Verb sets Drive to 10");
+        check (presets.getCurrentPresetName() == "Crushed Verb", "current preset name follows the load");
+        check (! presets.isModified(), "a freshly loaded preset is unmodified");
+
+        presets.loadPreset ("Subtle Air");
+        pump (state);
+        check (juce::approximatelyEqual (readParameter (state, dr::params::drive), 0.0f),
+               "Subtle Air sets Drive to 0");
+
+        // -- edited marker ---------------------------------------------------
+        writeParameter (state, dr::params::drive, 5.0f);
+        pump (state);
+        check (presets.isModified(), "moving a control marks the preset edited");
+        check (presets.getDisplayName().endsWith ("*"), "the edited preset is shown marked");
+
+        // -- user presets ----------------------------------------------------
+        const juce::String testName { "ZZ Self Test" };
+        presets.deleteUserPreset (testName);   // in case an earlier run left one
+
+        writeParameter (state, dr::params::tube, 7.25f);
+        pump (state);
+
+        const auto saved = presets.saveUserPreset (testName);
+        check (saved.wasOk(), "user preset saves: " + saved.getErrorMessage());
+        check (presets.getUserPresetNames().contains (testName), "saved preset is listed");
+        check (! presets.isModified(), "saving clears the edited marker");
+
+        writeParameter (state, dr::params::tube, 1.0f);
+        pump (state);
+        presets.loadPreset (testName);
+        pump (state);
+        check (std::abs (readParameter (state, dr::params::tube) - 7.25f) < 0.01f,
+               "user preset restores the value it was saved with");
+
+        const auto deleted = presets.deleteUserPreset (testName);
+        check (deleted.wasOk(), "user preset deletes: " + deleted.getErrorMessage());
+        check (! presets.getUserPresetNames().contains (testName), "deleted preset is gone");
+
+        // -- undo / redo ------------------------------------------------------
+        writeParameter (state, dr::params::mix, 20.0f);
+        pump (state);
+        undoManager.beginNewTransaction ("test");
+
+        writeParameter (state, dr::params::mix, 80.0f);
+        pump (state);
+        check (std::abs (readParameter (state, dr::params::mix) - 80.0f) < 0.01f,
+               "parameter takes the new value");
+        check (undoManager.canUndo(), "the change is undoable");
+
+        undoManager.undo();
+        pump (state);
+        check (std::abs (readParameter (state, dr::params::mix) - 20.0f) < 0.01f,
+               "undo restores the previous value");
+        check (undoManager.canRedo(), "the change is redoable");
+
+        undoManager.redo();
+        pump (state);
+        check (std::abs (readParameter (state, dr::params::mix) - 80.0f) < 0.01f,
+               "redo reapplies the change");
+
+        // -- remembered window size -------------------------------------------
+        processor.setSavedEditorWidth (1600);
+        check (processor.getSavedEditorWidth() == 1600, "editor width is stored in the state");
+
+        juce::MemoryBlock block;
+        processor.getStateInformation (block);
+
+        DiamondRoomAudioProcessor reloaded;
+        reloaded.setStateInformation (block.getData(), (int) block.getSize());
+        check (reloaded.getSavedEditorWidth() == 1600, "editor width survives a state round trip");
 
         std::cout << (ok ? "PASS" : "FAILED") << std::endl;
         return ok ? 0 : 1;
@@ -541,6 +660,9 @@ int main (int argc, char* argv[])
 
     if (argc > 1 && juce::String (argv[1]) == "--drive")
         return runDriveSelfTest();
+
+    if (argc > 1 && juce::String (argv[1]) == "--presets")
+        return runPresetSelfTest();
 
     const juce::File output = argc > 1
         ? juce::File::getCurrentWorkingDirectory().getChildFile (juce::String (argv[1]))

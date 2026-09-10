@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "Parameters.h"
+#include "PresetManager.h"
 #include "dsp/HReverb.h"
 #include "dsp/MannyMReverb.h"
 #include "dsp/OneKnobDriver.h"
@@ -52,12 +53,21 @@ public:
 
     //==============================================================================
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
+    juce::UndoManager& getUndoManager() noexcept { return undoManager; }
+    dr::PresetManager& getPresetManager() noexcept { return presetManager; }
     float getGainReductionDb() const noexcept { return tube.getGainReductionDb(); }
+
+    /** Editor width, remembered in the plugin state. 0 means "not set yet". */
+    int getSavedEditorWidth() const;
+    void setSavedEditorWidth (int width);
 
 private:
     void updateParameters();
 
+    // Declared before the state: the tree holds a pointer to it.
+    juce::UndoManager undoManager;
     juce::AudioProcessorValueTreeState state;
+    dr::PresetManager presetManager { state, undoManager };
     dr::params::Cache cache;
 
     dr::OneKnobDriver driver;

@@ -35,6 +35,7 @@ MetalSlider::MetalSlider (const juce::String& captionIn, bool isHorizontal,
     : caption (captionIn), minLabel (minLabelIn), maxLabel (maxLabelIn),
       horizontal (isHorizontal)
 {
+    setName (caption);
     setSliderStyle (horizontal ? juce::Slider::LinearHorizontal : juce::Slider::LinearVertical);
     setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     setWantsKeyboardFocus (false);
