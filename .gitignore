@@ -1,0 +1,4 @@
+JUCE/
+build/
+*.user
+.vs/
