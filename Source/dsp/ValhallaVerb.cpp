@@ -68,6 +68,8 @@ void ValhallaVerb::prepare (const juce::dsp::ProcessSpec& spec)
 
 void ValhallaVerb::reset()
 {
+    random.setSeed (0x5a17a11);
+
     for (auto& line : lines)
     {
         line.delay.clear();

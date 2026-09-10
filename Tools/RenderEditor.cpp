@@ -112,6 +112,10 @@ namespace
         float tailPeak = 0.0f;      // after the burst ends
         float tailAtEnd = 0.0f;
         double decaySeconds = 0.0;  // tail peak down to -60 dB
+
+        // Ratio of the last second of tail to a second three seconds earlier.
+        // A decaying tail shrinks; one that is self-oscillating holds or grows.
+        float lateGrowth = 0.0f;
         bool finite = true;
     };
 
@@ -183,6 +187,22 @@ namespace
                 lastAbove = i;
 
         report.decaySeconds = (double) (lastAbove - burstBlocks) * blockSize / testSampleRate;
+
+        auto windowPeak = [&envelope] (int firstBlock, int numBlocks)
+        {
+            float peak = 0.0f;
+
+            for (int i = firstBlock; i < juce::jmin (firstBlock + numBlocks, (int) envelope.size()); ++i)
+                peak = juce::jmax (peak, envelope[(size_t) i]);
+
+            return peak;
+        };
+
+        constexpr int oneSecond = (int) (testSampleRate / blockSize);
+        const auto lastWindow   = windowPeak (totalBlocks - oneSecond, oneSecond);
+        const auto earlyWindow  = windowPeak (totalBlocks - oneSecond * 4, oneSecond);
+
+        report.lateGrowth = earlyWindow > 1.0e-12f ? lastWindow / earlyWindow : 0.0f;
         return report;
     }
 
@@ -210,6 +230,7 @@ namespace
                   << "  tail peak   : " << db (report.tailPeak) << "\n"
                   << "  tail -60 dB : " << report.decaySeconds << " s\n"
                   << "  at 10 s     : " << db (report.tailAtEnd) << "\n"
+                  << "  late growth : " << report.lateGrowth << "x over 3 s\n"
                   << "  latency     : " << processor.getLatencySamples() << " samples"
                   << std::endl;
 
@@ -227,10 +248,15 @@ namespace
         if (report.outputPeak > 4.0f)
             fail ("output ran away, peak " + db (report.outputPeak));
 
-        // A tail that is not clearly below its own peak after nine seconds of
-        // silence means something in a feedback path is self-oscillating.
-        if (report.tailAtEnd > report.tailPeak * 0.01f)
-            fail ("tail is not decaying");
+        // Long settings legitimately still ring after nine seconds - a 10 s
+        // RT60 is supposed to - so what matters is whether the envelope is
+        // still falling, not how far down it has got. A feedback path that
+        // oscillates holds its level or climbs back up instead.
+        if (report.tailAtEnd > report.tailPeak)
+            fail ("tail never fell below its own peak");
+
+        if (report.lateGrowth > 0.7f)
+            fail ("tail stopped decaying, growth " + juce::String (report.lateGrowth, 3) + "x over 3 s");
 
         if (report.tailPeak < report.inputPeak * 0.0005f)
             fail ("no audible reverb tail");

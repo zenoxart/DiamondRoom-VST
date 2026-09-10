@@ -56,7 +56,9 @@ private:
     std::array<Line, numLines> lines;
     std::array<Side, 2> sides;
 
-    juce::Random random;
+    // Seeded, not clock-seeded: the vintage modes wobble with noise, and a
+    // host bouncing the same material twice has to get the same render.
+    juce::Random random { 0x5a17a11 };
     double sampleRate = 44100.0;
     float decaySeconds = 2.23f;
     float highCutHz = 16420.0f;
