@@ -6,7 +6,6 @@ namespace dr
 namespace
 {
     constexpr float preDelayMs   = 63.5f;
-    constexpr float decaySeconds = 0.5f;
     constexpr float hiFreqHz     = 4504.0f;
     constexpr float hiDampRatio  = 0.30f;   // highs decay 3.3x faster
     constexpr float loFreqHz     = 120.0f;
@@ -18,6 +17,12 @@ namespace
 
     constexpr float lineLengthsMs[] = { 23.9f, 31.1f, 37.7f, 43.1f, 51.7f, 59.3f };
     constexpr float diffusionMs[]   = { 6.1f, 9.7f, 13.9f };
+
+    // Line lengths are quoted for the preset's 9981 m3 room and scaled from
+    // there; the delay lines are allocated for the largest room on the dial.
+    constexpr float referenceDimension = 21.5f;   // cbrt(9981)
+    constexpr float minLengthScale = 0.45f;
+    constexpr float maxLengthScale = 1.55f;
 }
 
 void TrueVerb::prepare (const juce::dsp::ProcessSpec& spec)
@@ -27,16 +32,10 @@ void TrueVerb::prepare (const juce::dsp::ProcessSpec& spec)
     for (int i = 0; i < numLines; ++i)
     {
         auto& line = lines[(size_t) i];
-        line.length = (float) (lineLengthsMs[i] * 0.001 * sampleRate);
-        line.delay.prepare ((int) line.length + 8);
+        line.baseLength = (float) (lineLengthsMs[i] * 0.001 * sampleRate);
+        line.delay.prepare ((int) (line.baseLength * maxLengthScale) + 8);
         line.hfDamp.setCutoff (hiFreqHz, sampleRate);
         line.lfDamp.setCutoff (loFreqHz, sampleRate);
-
-        const auto lengthSeconds = line.length / (float) sampleRate;
-        line.gMid  = feedbackForRt60 (lengthSeconds, decaySeconds);
-        line.gHigh = feedbackForRt60 (lengthSeconds, decaySeconds * hiDampRatio);
-        line.lowRatio = feedbackForRt60 (lengthSeconds, decaySeconds * loDampRatio)
-                          / juce::jmax (1.0e-6f, line.gMid);
     }
 
     for (int s = 0; s < 2; ++s)
@@ -55,8 +54,12 @@ void TrueVerb::prepare (const juce::dsp::ProcessSpec& spec)
         side.revShelf.set (SvfFilter::highShelf, hiFreqHz, sampleRate, 0.707f, revShelfDb);
     }
 
+    lengthScale.reset (sampleRate, 0.05);
+    lengthScale.setCurrentAndTargetValue (1.0f);
+
     geometryDirty = true;
     updateGeometry();
+    lengthScale.setCurrentAndTargetValue (lengthScale.getTargetValue());
     reset();
 }
 
@@ -117,6 +120,24 @@ void TrueVerb::updateGeometry()
     // Mean free path of a room of this volume gives the first-order spacing
     // between reflections; the direct distance sets where they start.
     const auto roomDimension = std::cbrt (roomVolume);          // metres
+
+    // A bigger room means longer paths between surfaces - both a sparser modal
+    // spacing in the tank and a longer reverberation time.
+    lengthScale.setTargetValue (juce::jlimit (minLengthScale, maxLengthScale,
+                                              roomDimension / referenceDimension));
+    decaySeconds = 0.15f + 0.055f * roomDimension;
+
+    for (auto& line : lines)
+    {
+        const auto lengthSeconds = line.baseLength * lengthScale.getTargetValue()
+                                     / (float) sampleRate;
+
+        line.gMid  = feedbackForRt60 (lengthSeconds, decaySeconds);
+        line.gHigh = feedbackForRt60 (lengthSeconds, decaySeconds * hiDampRatio);
+        line.lowRatio = feedbackForRt60 (lengthSeconds, decaySeconds * loDampRatio)
+                          / juce::jmax (1.0e-6f, line.gMid);
+    }
+
     const auto firstReflection = juce::jmax (2.0f, roomDimension * 0.5f + distanceMetres);
     const auto baseMs = firstReflection / speedOfSound * 1000.0f;
     const auto spacingMs = roomDimension / speedOfSound * 1000.0f * (2.0f - density);
@@ -186,10 +207,13 @@ void TrueVerb::process (float inL, float inR, float& outL, float& outR) noexcept
         tailIn[(size_t) s] = x;
     }
 
+    const auto currentScale = lengthScale.getNextValue();
+
     std::array<float, numLines> taps {};
 
     for (int i = 0; i < numLines; ++i)
-        taps[(size_t) i] = lines[(size_t) i].delay.readInt ((int) lines[(size_t) i].length);
+        taps[(size_t) i] = lines[(size_t) i].delay.read (
+            juce::jmax (2.0f, lines[(size_t) i].baseLength * currentScale));
 
     // Two Hadamard blocks with a cross-feed between them.
     auto a = taps[0], b = taps[1], c = taps[2], d = taps[3];

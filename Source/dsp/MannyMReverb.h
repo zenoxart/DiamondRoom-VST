@@ -21,7 +21,7 @@ public:
     /** @param amount  0..10 dial; density and level of the chamber. */
     void setAmount (float amount) noexcept;
 
-    /** @param distortion  0..10 dial; grit inside the feedback path. */
+    /** @param distortion  0..10 dial; grit on the chamber output. */
     void setDistortion (float distortion) noexcept;
 
     void process (float inL, float inR, float& outL, float& outR) noexcept;
@@ -59,6 +59,7 @@ private:
     double sampleRate = 44100.0;
     float amountGain = 0.7f;
     float driveAmount = 0.0f;
+    float driveShape = 1.0f;
     float driveTrim = 1.0f;
 };
 

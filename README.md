@@ -34,12 +34,12 @@ the Patcher graph behave.
 | Drive | 0–10 | Asymmetric tube overdrive into the reverbs, 4x oversampled |
 | H-Reverb Tone | ±10 | Tilt around 900 Hz on the H-Reverb tail |
 | H-Reverb Time | 0–10 | RT60, 0.25 s to 10 s (preset value 3.24 s ≈ 6.9) |
-| MannyM Distortion | 0–10 | Grit inside the chamber's feedback path |
+| MannyM Distortion | 0–10 | Saturation on the chamber output |
 | MannyM Amount | 0–10 | Chamber density and level |
 | Valhalla HighCut | 0–10 | 1 kHz to 20 kHz (preset value 16.4 kHz ≈ 9.3) |
 | Valhalla Decay | 0–10 | 0.3 s to 9 s (preset value 2.23 s ≈ 5.9) |
 | True Verb Distance | 0–10 | 0.5 m to 30 m; sets early/tail balance and air absorption |
-| True Verb Roomsize | 0–10 | 200 m³ to 30000 m³; sets reflection spacing |
+| True Verb Roomsize | 0–10 | 200 m³ to 30000 m³; sets reflection spacing, tank length and decay (0.5 s to 1.9 s) |
 | Tube | 0–10 | Drive into the PuigChild 670 and its blend into the sum |
 | Section LEDs | on/off | Arm each reverb |
 | H-Mix … TrueVerb Mix | 0–100 % | Level of each reverb into the sum |
@@ -68,6 +68,10 @@ VST3 and a standalone app are produced under
 `build/DiamondRoom_artefacts/Release/`. The VST3 is copied to the system plugin
 folder automatically (`COPY_PLUGIN_AFTER_BUILD`).
 
+If a host still has the plugin loaded, that copy fails with a long MSB3073 error
+even though the build itself succeeded - Windows will not overwrite a DLL that is
+mapped into a running process. Close the host and build again.
+
 ## Development helper
 
 `Tools/RenderEditor.cpp` builds as an optional console app that renders the
@@ -78,8 +82,14 @@ non-finite samples) without needing a host:
 cmake -B build -DDIAMONDROOM_BUILD_SCREENSHOT=ON
 cmake --build build --config Release --target DiamondRoomShot
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --audio
+./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --ui
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe panel.png 2001
 ```
+
+`--ui` checks that every fader's drawn cap and its draggable region agree at
+several window sizes. That one is worth keeping: a `Slider` subclass that
+overrides `resized()` without calling the base leaves JUCE's draggable region
+one pixel wide, and the fader becomes impossible to set.
 
 ## Layout
 
@@ -92,7 +102,7 @@ Source/
     DspUtils.h          filters, delay lines, all-passes, FDN mixing
     OneKnobDriver.*     Drive
     HReverb.*           FDN hall with early reflections and tail compression
-    MannyMReverb.*      chamber with feedback-path distortion and phaser
+    MannyMReverb.*      chamber with output distortion and phaser
     ValhallaVerb.*      Concert Hall, 1970s colour
     TrueVerb.*          geometric room simulator
     PuigChild.*         vari-mu compressor and tube/transformer colour

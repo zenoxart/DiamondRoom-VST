@@ -12,10 +12,22 @@ namespace
     constexpr float capLongSide     = 62.0f;
     constexpr float capShortSide    = 48.0f;
 
+    // The master fader carries a heavier cap than the section faders.
+    constexpr float masterCapExtraBreadth = 20.0f;
+    constexpr float masterCapExtraLength  = 14.0f;
+
     // How far the graduations reach out from the track. The component itself
     // is wider than this so the caption underneath has room to breathe.
     constexpr float trackBreadth    = 84.0f;
     constexpr int   numGraduations  = 21;
+}
+
+juce::Slider::SliderLayout MetalSlider::TrackLayout::getSliderLayout (juce::Slider& slider)
+{
+    juce::Slider::SliderLayout layout;
+    layout.sliderBounds = static_cast<MetalSlider&> (slider).getTrackArea().toNearestInt();
+    layout.textBoxBounds = {};
+    return layout;
 }
 
 MetalSlider::MetalSlider (const juce::String& captionIn, bool isHorizontal,
@@ -26,6 +38,12 @@ MetalSlider::MetalSlider (const juce::String& captionIn, bool isHorizontal,
     setSliderStyle (horizontal ? juce::Slider::LinearHorizontal : juce::Slider::LinearVertical);
     setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     setWantsKeyboardFocus (false);
+    setLookAndFeel (&trackLayout);
+}
+
+MetalSlider::~MetalSlider()
+{
+    setLookAndFeel (nullptr);
 }
 
 void MetalSlider::setDesignScale (float newScale)
@@ -34,12 +52,19 @@ void MetalSlider::setDesignScale (float newScale)
     {
         scale = newScale;
         cachedCapSize = {};
+
+        // The track geometry is scale dependent, so the draggable region has
+        // to be recalculated along with the artwork.
+        resized();
         repaint();
     }
 }
 
 void MetalSlider::resized()
 {
+    // Slider::resized() is what derives the region the mouse is mapped onto.
+    // Skipping it leaves that region one pixel wide.
+    juce::Slider::resized();
     cachedCapSize = {};
 }
 
@@ -51,8 +76,10 @@ juce::Rectangle<float> MetalSlider::getTrackArea() const
     {
         area.removeFromTop (captionRow * scale);
         area.removeFromBottom (figureRow * scale);
-        return area.withSizeKeepingCentre (area.getWidth() - capShortSide * scale,
-                                           area.getHeight());
+
+        // Inset by the cap's breadth so it stays inside the plate at both ends.
+        const auto capBreadth = (capShortSide + masterCapExtraBreadth) * scale;
+        return area.withSizeKeepingCentre (area.getWidth() - capBreadth, area.getHeight());
     }
 
     area.removeFromBottom (captionRow * scale);
@@ -69,10 +96,9 @@ juce::Rectangle<float> MetalSlider::getCapBounds (juce::Rectangle<float> track) 
 
     if (horizontal)
     {
-        // The master fader carries a heavier cap than the section faders.
         const auto x = track.getX() + proportion * track.getWidth();
-        return juce::Rectangle<float> ((capShortSide + 20.0f) * scale,
-                                       (capLongSide + 14.0f) * scale)
+        return juce::Rectangle<float> ((capShortSide + masterCapExtraBreadth) * scale,
+                                       (capLongSide + masterCapExtraLength) * scale)
                    .withCentre ({ x, track.getCentreY() });
     }
 

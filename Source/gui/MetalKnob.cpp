@@ -32,6 +32,7 @@ void MetalKnob::setDesignScale (float newScale)
     {
         scale = newScale;
         cachedDiameter = 0;
+        resized();
         repaint();
     }
 }
@@ -50,6 +51,7 @@ juce::Rectangle<float> MetalKnob::getKnobBounds() const
 
 void MetalKnob::resized()
 {
+    juce::Slider::resized();
     cachedDiameter = 0;
 }
 

@@ -105,12 +105,18 @@ void MannyMReverb::setDistortion (float distortion) noexcept
 {
     const auto t = juce::jlimit (0.0f, 10.0f, distortion) * 0.1f;
 
-    // The shaper sits inside the feedback path, so it must not add gain at
-    // small signal levels or the tank turns into an oscillator. Dividing by
-    // the drive keeps the slope at the origin exactly 1, and everything above
-    // that saturates - which is where the grit comes from.
+    // The shaper sits on the chamber output rather than in the feedback path.
+    // In the loop it could only ever be a gentle unity-slope curve - anything
+    // audible either made the tank self-oscillate or ate the tail - so the
+    // grit lives downstream, where it can be driven properly.
     driveAmount = t * t * 12.0f + t * 2.0f;
-    driveTrim = 1.0f / (1.0f + driveAmount);
+    driveShape = 1.0f + driveAmount;
+
+    // Normalised so a nominal tank level keeps its loudness, at half strength
+    // in dB, which leaves some of the natural level drop from the saturation.
+    constexpr float nominal = 0.25f;
+    const auto makeUp = std::sqrt (nominal * driveShape / std::tanh (nominal * driveShape));
+    driveTrim = makeUp / driveShape;
 }
 
 void MannyMReverb::process (float inL, float inR, float& outL, float& outR) noexcept
@@ -148,14 +154,18 @@ void MannyMReverb::process (float inL, float inR, float& outL, float& outR) noex
         v = line.mod.process (v, line.lfo.next());
         v = line.damp.processLowpass (v) * line.feedback;
 
-        if (driveAmount > 1.0e-4f)
-            v = fastTanh (v * (1.0f + driveAmount)) * driveTrim;
-
         line.delay.write (flushDenormal (v));
     }
 
     auto wetL = (taps[0] + taps[2]) * 0.5f;
     auto wetR = (taps[1] + taps[3]) * 0.5f;
+
+    // -- distortion --------------------------------------------------------
+    if (driveAmount > 1.0e-4f)
+    {
+        wetL = fastTanh (wetL * driveShape) * driveTrim;
+        wetR = fastTanh (wetR * driveShape) * driveTrim;
+    }
 
     // -- phaser ------------------------------------------------------------
     const auto lfo = phaserLfo.next();

@@ -51,16 +51,16 @@ void OneKnobDriver::setDrive (float amount) noexcept
 {
     const auto t = juce::jlimit (0.0f, 10.0f, amount) * 0.1f;
 
-    // 0 dB .. +30 dB into the shaper.
-    const auto gainDb = 30.0f * t * t + 6.0f * t;
+    // The dial has to travel from clean to wrecked, which means real gain into
+    // the shaper: a quiet source only bends tanh once it is well past unity.
+    // Up to +42 dB, taken back out again afterwards so the knob changes the
+    // tone rather than just the level.
+    const auto gainDb = 42.0f * std::pow (t, 1.15f);
     driveGain.setTargetValue (dbToGain (gainDb));
+    makeUp.setTargetValue (dbToGain (-gainDb * 0.90f));
 
-    // Compensate most, but not all, of the added gain: the stage should still
-    // push the reverbs a little harder as you turn it up.
-    makeUp.setTargetValue (dbToGain (-gainDb * 0.82f));
-
-    // Below about 1 on the dial the stage is essentially clean.
-    blend.setTargetValue (juce::jlimit (0.0f, 1.0f, t * 4.0f));
+    // Fully engaged by about 2 on the dial; below that it stays clean.
+    blend.setTargetValue (juce::jlimit (0.0f, 1.0f, t * 5.0f));
 }
 
 void OneKnobDriver::process (juce::dsp::AudioBlock<float> block)

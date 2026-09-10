@@ -7,12 +7,101 @@
 
     Usage: DiamondRoomShot <output.png> [width]
            DiamondRoomShot --audio          (offline DSP self-test)
+           DiamondRoomShot --ui             (fader geometry self-test)
 */
 
 #include "../Source/PluginProcessor.h"
+#include "../Source/gui/MetalSlider.h"
 
 namespace
 {
+    //==========================================================================
+    /**
+        Checks that what a fader draws and what it drags agree. JUCE derives the
+        draggable region in Slider::resized(); if a subclass draws its track
+        somewhere else, the cap and the mouse disagree and the control becomes
+        impossible to set.
+    */
+    void collectSliders (juce::Component& parent, std::vector<dr::MetalSlider*>& found)
+    {
+        for (auto* child : parent.getChildren())
+        {
+            if (auto* slider = dynamic_cast<dr::MetalSlider*> (child))
+                found.push_back (slider);
+
+            collectSliders (*child, found);
+        }
+    }
+
+    int runUiSelfTest()
+    {
+        DiamondRoomAudioProcessor processor;
+        processor.prepareToPlay (48000.0, 512);
+
+        std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
+
+        if (editor == nullptr)
+        {
+            std::cerr << "no editor" << std::endl;
+            return 1;
+        }
+
+        bool ok = true;
+
+        for (const auto width : { 900, 1300, 2001 })
+        {
+            editor->setSize (width, juce::roundToInt ((double) width * 764.0 / 2001.0));
+
+            std::vector<dr::MetalSlider*> sliders;
+            collectSliders (*editor, sliders);
+
+            if (sliders.empty())
+            {
+                std::cerr << "FAIL: no faders found" << std::endl;
+                return 1;
+            }
+
+            float worst = 0.0f;
+
+            for (auto* slider : sliders)
+            {
+                const auto track = slider->getTrackArea();
+                const auto range = slider->getRange();
+                const auto vertical = slider->isVertical();
+
+                for (const auto proportion : { 0.0, 0.25, 0.5, 0.75, 1.0 })
+                {
+                    const auto value = range.getStart() + proportion * range.getLength();
+                    slider->setValue (value, juce::dontSendNotification);
+
+                    // Where the cap is drawn.
+                    const auto drawn = vertical
+                        ? track.getBottom() - (float) proportion * track.getHeight()
+                        : track.getX() + (float) proportion * track.getWidth();
+
+                    // Where JUCE maps that value on screen.
+                    const auto mapped = slider->getPositionOfValue (value);
+
+                    worst = juce::jmax (worst, std::abs (drawn - mapped));
+                }
+            }
+
+            std::cout << "width " << width << " : worst cap/mouse mismatch "
+                      << worst << " px" << std::endl;
+
+            // A pixel of rounding is fine; anything more is a control the user
+            // cannot place accurately.
+            if (worst > 1.5f)
+            {
+                std::cerr << "  FAIL: fader drawing and dragging disagree" << std::endl;
+                ok = false;
+            }
+        }
+
+        std::cout << (ok ? "PASS" : "FAILED") << std::endl;
+        return ok ? 0 : 1;
+    }
+
     constexpr double testSampleRate = 48000.0;
     constexpr int blockSize = 512;
 
@@ -199,6 +288,9 @@ int main (int argc, char* argv[])
 
     if (argc > 1 && juce::String (argv[1]) == "--audio")
         return runAudioSelfTest();
+
+    if (argc > 1 && juce::String (argv[1]) == "--ui")
+        return runUiSelfTest();
 
     const juce::File output = argc > 1
         ? juce::File::getCurrentWorkingDirectory().getChildFile (juce::String (argv[1]))
