@@ -1,4 +1,5 @@
 JUCE/
 build/
+dist/
 *.user
 .vs/

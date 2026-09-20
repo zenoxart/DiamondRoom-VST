@@ -6,12 +6,14 @@
 
 Four parallel reverbs. Harmonic drive. Blended tube colour.
 
-[![Build VST3](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml)
-![Format](https://img.shields.io/badge/format-VST3-aed9ef?style=flat-square)
-![Platform](https://img.shields.io/badge/platform-Windows_x64-91b6d1?style=flat-square)
+[![Build plugins](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml)
+![Format](https://img.shields.io/badge/format-VST3_%2B_AU-aed9ef?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Windows_%7C_macOS_%7C_Linux-91b6d1?style=flat-square)
 ![Built with JUCE](https://img.shields.io/badge/built_with-JUCE_8-637e99?style=flat-square)
 
-### [↓ Download VST3 for Windows](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip)
+### Download Diamond Room
+
+[**Windows - VST3**](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip) | [**macOS - VST3 + AU**](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-macOS-universal.zip) | [**Linux - VST3**](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Linux-x64.tar.gz)
 
 [Build details & checksum](https://github.com/zenoxart/DiamondRoom-VST/releases/tag/latest-build) · [Installation](#installation) · [Controls](#controls) · [Build from source](#development)
 
@@ -36,20 +38,31 @@ original commercial plugins.
 
 ## Installation
 
-1. **[Download the Windows x64 VST3 ZIP](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip)** and extract it.
-2. Close your DAW, then copy the **entire `Diamond Room.vst3` folder** into:
-   ```text
-   C:\Program Files\Common Files\VST3\
-   ```
-3. Open your DAW and rescan VST3 plugins. In FL Studio, open **Options → Manage plugins → Find installed plugins**.
-4. Add **Diamond Room** to a mixer effect slot.
+Download the archive for your platform, close your DAW, and extract it. Copy the
+**complete plugin bundle** into the matching folder below, then restart your DAW
+and rescan plugins. Keep every bundle's `Contents` directory intact.
 
-Keep the `Contents` folder inside the VST3 bundle intact. Replacing an older
-version requires closing the DAW first.
+| Platform | Download | Format & destination |
+| :--- | :--- | :--- |
+| **Windows x64** | [Download ZIP](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip) | VST3: `C:\Program Files\Common Files\VST3\` |
+| **macOS 11+ - Intel & Apple Silicon** | [Download universal ZIP](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-macOS-universal.zip) | VST3: `~/Library/Audio/Plug-Ins/VST3/` - AU: `~/Library/Audio/Plug-Ins/Components/` |
+| **Linux x64 - glibc 2.35+** | [Download tar.gz](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Linux-x64.tar.gz) | VST3: `~/.vst3/` |
 
-**Download channel:** unsigned Windows x64 development build. The link above
-updates after each successful `main` build. The release page includes the exact
-commit and SHA-256 checksum. macOS and Linux binaries are not currently provided.
+In FL Studio, use **Options > Manage plugins > Find installed plugins**, then add
+**Diamond Room** to a mixer effect slot. In Logic Pro, use the **AU** version.
+AU is a macOS-only format; Windows and Linux use VST3.
+
+**macOS:** the bundles are ad-hoc signed but not Apple-notarised. macOS may block
+a downloaded plugin until you approve it in **System Settings > Privacy & Security**.
+Both CPU architectures are included in each bundle.
+
+**Linux:** the release is built on Ubuntu 22.04. Use an x86_64 VST3 host with
+glibc 2.35 or newer and the usual ALSA, X11 and font libraries. Extract the tar
+archive with permissions preserved. Older distributions can build from source.
+
+**Download channel:** development builds, updated only after every platform's
+build and checks succeed on `main`. The [release page](https://github.com/zenoxart/DiamondRoom-VST/releases/tag/latest-build)
+includes the source commit and SHA-256 checksums.
 
 ## Controls
 
@@ -96,12 +109,13 @@ Start with **Diamond Room**, **Vocal Plate**, **Tight Room**, **Cathedral**,
 
 ## Automated builds
 
-Every branch push and pull request triggers the [Windows build workflow](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml).
-It checks out the pinned JUCE version, compiles the VST3, runs the offline checks,
-and packages the complete plugin bundle. Each successful build has a downloadable
+Every branch push and pull request triggers the [cross-platform build workflow](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml).
+It checks out the pinned JUCE version, builds Windows and Linux VST3 bundles and
+macOS universal VST3 + AU bundles, and runs the offline checks on each platform.
+The macOS job also verifies both CPU slices, signs the bundles and runs Apple AU validation. Each successful build has a downloadable
 artifact retained for 30 days.
 
-Successful builds on `main` also update the **[public VST3 download](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip)**.
+Successful builds on `main` also update the **[public plugin downloads](https://github.com/zenoxart/DiamondRoom-VST/releases/tag/latest-build)**.
 Pull requests and other branches never replace that download. The workflow can
 also be started manually from the Actions tab.
 
@@ -110,7 +124,10 @@ also be started manually from the Actions tab.
 <details>
 <summary><strong>Build from source</strong></summary>
 
-Requires CMake 3.22+, Visual Studio 2022 with C++ tools, and JUCE 8.0.4.
+Requires CMake 3.22+, JUCE 8.0.4 and a C++17 compiler: Visual Studio 2022 on
+Windows, Xcode on macOS, or GCC/Clang on Linux.
+
+**Windows**
 
 ```powershell
 git clone https://github.com/zenoxart/DiamondRoom-VST.git
@@ -120,7 +137,22 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DDIAMONDROOM_COPY_PLUGIN_
 cmake --build build --config Release
 ```
 
-The VST3 and standalone app are generated under `build/DiamondRoom_artefacts/Release/`.
+**macOS** (after cloning the project and JUCE as above):
+
+```bash
+cmake -S . -B build -G Xcode '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
+cmake --build build --config Release --target DiamondRoom_VST3 DiamondRoom_AU
+```
+
+**Linux** (Ubuntu/Debian):
+
+```bash
+sudo apt-get install build-essential cmake ninja-build pkg-config libasound2-dev libjack-jackd2-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libgl1-mesa-dev xvfb xauth
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
+cmake --build build --parallel 2 --target DiamondRoom_VST3
+```
+
+Build products are generated under `build/DiamondRoom_artefacts/Release/`.
 Set `DIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=ON` to copy the VST3 into the system plugin
 folder after building. This is the default for local builds; CI disables it.
 
@@ -155,7 +187,8 @@ $tool = './build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe'
 | `--lifecycle` | 30 processor removals, 60 editor closures and five GUI shutdown cycles. |
 
 These are offline checks. DAW-specific behaviour still needs host testing.
-The preset check creates and removes a temporary preset in the user preset folder.
+On macOS/Linux, omit `.exe` from the helper path; on headless Linux, run it
+with `xvfb-run -a`. The preset check creates and removes a temporary preset in the user preset folder.
 
 </details>
 
@@ -169,7 +202,7 @@ Source/       Processor, editor, parameters and presets
 Assets/       Embedded background and control artwork
 Tools/        Offscreen renderer and offline checks
 docs/images/ README screenshot
-.github/      Windows build and download publishing workflow
+.github/      Windows, macOS and Linux build/download workflow
 ```
 
 </details>

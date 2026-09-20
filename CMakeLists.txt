@@ -13,6 +13,11 @@ endif()
 
 add_subdirectory(JUCE)
 
+set(DIAMONDROOM_FORMATS VST3 Standalone)
+if (APPLE)
+    list(APPEND DIAMONDROOM_FORMATS AU)
+endif()
+
 # Embed the supplied complete background and the interactive control artwork.
 juce_add_binary_data(DiamondRoomAssets SOURCES
     Assets/KnobBody.png
@@ -23,9 +28,10 @@ juce_add_binary_data(DiamondRoomAssets SOURCES
 
 juce_add_plugin(DiamondRoom
     COMPANY_NAME              "ZenoxArt"
+    BUNDLE_ID                 "com.zenoxart.DiamondRoom"
     PLUGIN_MANUFACTURER_CODE  Znxa
     PLUGIN_CODE               Dmrm
-    FORMATS                   VST3 Standalone
+    FORMATS                   ${DIAMONDROOM_FORMATS}
     PRODUCT_NAME              "Diamond Room"
     IS_SYNTH                  FALSE
     NEEDS_MIDI_INPUT          FALSE

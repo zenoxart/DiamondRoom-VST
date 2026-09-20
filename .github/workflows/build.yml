@@ -1,4 +1,4 @@
-name: Build VST3
+name: Build plugins
 
 on:
   push:
@@ -10,17 +10,33 @@ permissions:
   contents: read
 
 concurrency:
-  group: vst3-${{ github.workflow }}-${{ github.ref }}
+  group: plugins-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Windows x64
-    runs-on: windows-2022
-    timeout-minutes: 30
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64 · VST3
+            os: windows-2022
+            platform: Windows
+            artifact: DiamondRoom-Windows-x64
+          - name: macOS universal · VST3 + AU
+            os: macos-15
+            platform: macOS
+            artifact: DiamondRoom-macOS-universal
+          - name: Linux x64 · VST3
+            os: ubuntu-22.04
+            platform: Linux
+            artifact: DiamondRoom-Linux-x64
     defaults:
       run:
-        shell: pwsh
+        shell: bash
     steps:
       - name: Check out Diamond Room
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -35,58 +51,84 @@ jobs:
           path: JUCE
           persist-credentials: false
 
-      - name: Configure
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev \
+            libxrender-dev libgl1-mesa-dev xvfb xauth
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
         run: >-
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64
           -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
           -DDIAMONDROOM_BUILD_SCREENSHOT=ON
 
+      - name: Configure macOS universal
+        if: runner.os == 'macOS'
+        run: >-
+          cmake -S . -B build -G Xcode
+          '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
+          -DDIAMONDROOM_BUILD_SCREENSHOT=ON
+
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
+          -DDIAMONDROOM_BUILD_SCREENSHOT=ON
+
       - name: Build plugin and test helper
-        run: cmake --build build --config Release --parallel 2 --target DiamondRoom_VST3 DiamondRoomShot
+        run: |
+          targets=(DiamondRoom_VST3 DiamondRoomShot)
+          if [[ "$RUNNER_OS" == macOS ]]; then targets+=(DiamondRoom_AU); fi
+          cmake --build build --config Release --parallel 2 --target "${targets[@]}"
 
       - name: Test audio, controls and lifecycle
         run: |
-          $tool = './build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe'
-          foreach ($test in @('--audio', '--ui', '--drive', '--tube', '--presets', '--lifecycle')) {
-            & $tool $test
-            if ($LASTEXITCODE -ne 0) { throw "$test failed with exit code $LASTEXITCODE" }
-          }
+          tool='./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot'
+          prefix=()
+          if [[ "$RUNNER_OS" == Windows ]]; then tool+='.exe'; fi
+          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
+          for test in --audio --ui --drive --tube --presets --lifecycle; do
+            "${prefix[@]}" "$tool" "$test"
+          done
 
-      - name: Package Windows VST3
+      - name: Sign and validate macOS bundles
+        if: runner.os == 'macOS'
         run: |
-          $plugin = 'build/DiamondRoom_artefacts/Release/VST3/Diamond Room.vst3'
-          if (!(Test-Path "$plugin/Contents/x86_64-win/Diamond Room.vst3")) {
-            throw 'The VST3 bundle is incomplete.'
-          }
-          New-Item -ItemType Directory -Path package, dist -Force | Out-Null
-          Copy-Item -LiteralPath $plugin -Destination package -Recurse
-          Copy-Item LICENSE package/LICENSE.txt
-          Copy-Item JUCE/LICENSE.md package/JUCE-LICENSE.md
-          @"
-          Diamond Room - Windows x64 VST3
-          Build commit: $env:GITHUB_SHA
-          Source: https://github.com/$env:GITHUB_REPOSITORY/tree/$env:GITHUB_SHA
+          for bundle in 'build/DiamondRoom_artefacts/Release/VST3/Diamond Room.vst3' \
+                        'build/DiamondRoom_artefacts/Release/AU/Diamond Room.component'; do
+            lipo -verify_arch arm64 x86_64 "$bundle/Contents/MacOS/Diamond Room"
+            codesign --force --deep --sign - "$bundle"
+            codesign --verify --deep --strict "$bundle"
+          done
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          ditto 'build/DiamondRoom_artefacts/Release/AU/Diamond Room.component' \
+            "$HOME/Library/Audio/Plug-Ins/Components/Diamond Room.component"
+          auval -v aufx Dmrm Znxa
 
-          Close your DAW. Extract this ZIP and copy the entire 'Diamond Room.vst3'
-          folder to C:\Program Files\Common Files\VST3\, then rescan plugins in your DAW.
-          Keep the Contents folder and all files inside it intact.
-
-          This is an unsigned development build from main, not a stable release.
-          "@ | Set-Content package/INSTALL.txt
-          Compress-Archive -Path 'package/*' -DestinationPath dist/DiamondRoom-Windows-x64.zip
-          $hash = (Get-FileHash dist/DiamondRoom-Windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  DiamondRoom-Windows-x64.zip" | Set-Content dist/SHA256SUMS.txt
+      - name: Package complete plugin bundles
+        env:
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+        run: python3 Tools/package_plugin.py "$PACKAGE_PLATFORM"
 
       - name: Upload download package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: DiamondRoom-Windows-x64
+          name: ${{ matrix.artifact }}
           path: dist/*
           if-no-files-found: error
           retention-days: 30
 
   publish:
-    name: Update development download
+    name: Update development downloads
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -94,10 +136,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download tested package
+      - name: Download all tested packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: DiamondRoom-Windows-x64
+          pattern: DiamondRoom-*
+          merge-multiple: true
           path: dist
 
       - name: Publish rolling development build
@@ -107,34 +150,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Do not replace a newer main build when an old workflow is re-run.
           current_main="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
           if [[ "$current_main" != "$GITHUB_SHA" ]]; then
             echo 'A newer commit is on main; skipping the rolling release.'
             exit 0
           fi
+          cat dist/*.sha256 > dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
           cat > notes.md <<EOF
-          Automatically built Windows x64 VST3 from main.
+          Automatically built plugins from main. All three platform builds must pass before publishing.
 
           Commit: [$GITHUB_SHA](https://github.com/$GH_REPO/commit/$GITHUB_SHA)
           Build: https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID
 
-          Download **DiamondRoom-Windows-x64.zip**, extract it, and copy the complete
-          **Diamond Room.vst3** folder into **C:\Program Files\Common Files\VST3**.
-          Restart your DAW and rescan plugins. SHA256SUMS.txt contains the ZIP checksum.
+          | Download | Format | Install location |
+          | --- | --- | --- |
+          | DiamondRoom-Windows-x64.zip | VST3 | C:\Program Files\Common Files\VST3 |
+          | DiamondRoom-macOS-universal.zip | VST3 + AU, Intel and Apple Silicon | ~/Library/Audio/Plug-Ins/VST3 and ~/Library/Audio/Plug-Ins/Components |
+          | DiamondRoom-Linux-x64.tar.gz | VST3, glibc 2.35+ | ~/.vst3 |
 
-          This unsigned development build updates after successful main builds.
-          Audio, UI, preset and lifecycle checks pass before publishing; this does
-          not guarantee compatibility with every host.
+          Extract the archive and copy each complete plugin bundle into the appropriate folder.
+          Restart your DAW and rescan plugins. SHA256SUMS.txt contains all archive checksums.
+
+          Development builds. macOS requires 11.0+; bundles are ad-hoc signed, not Apple-notarised.
+          Audio, UI, preset and lifecycle checks run on every platform; macOS also runs AU validation.
+          These checks do not guarantee compatibility with every host.
           EOF
           if gh release view latest-build >/dev/null 2>&1; then
-            # Only the dedicated rolling-build tag moves; version tags are untouched.
             gh api --method PATCH "repos/$GH_REPO/git/refs/tags/latest-build" \
               -f sha="$GITHUB_SHA" -F force=true
             gh release upload latest-build dist/* --clobber
-            gh release edit latest-build --title 'Latest Windows development build' \
+            gh release edit latest-build --title 'Latest development builds' \
               --notes-file notes.md --prerelease
           else
             gh release create latest-build dist/* --target "$GITHUB_SHA" \
-              --title 'Latest Windows development build' --notes-file notes.md --prerelease
+              --title 'Latest development builds' --notes-file notes.md --prerelease
           fi
