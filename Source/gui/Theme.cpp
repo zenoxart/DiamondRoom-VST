@@ -63,8 +63,8 @@ namespace
 }
 
 //==============================================================================
-juce::Image createCrystalTexture (int width, int height, int seed,
-                                  float brightness, float shardSize)
+juce::Image createCrystalTexture (int width, int height, int seed, float brightness,
+                                  float shardSize, float edgeFalloff)
 {
     const auto w = juce::jmax (1, width);
     const auto h = juce::jmax (1, height);
@@ -112,9 +112,34 @@ juce::Image createCrystalTexture (int width, int height, int seed,
                                           juce::jmin (centre.y, area.getHeight() - centre.y))
                                 / juce::jmax (1.0f, juce::jmin (area.getWidth(), area.getHeight()) * 0.5f);
 
-        auto value = (0.06f + 0.94f * lit * lit) * brightness;
+        auto value = 0.06f + 0.94f * lit * lit;
         value *= 0.72f + 0.28f * (1.0f - fromEdge);          // brighter towards the edges
+
+        // Fade the field out towards the horizontal centre, so a wide texture
+        // reads as crystal breaking in from the left and right edges rather
+        // than a pattern covering the whole plate.
+        if (edgeFalloff > 0.0f)
+        {
+            const auto normX = centre.x / juce::jmax (1.0f, area.getWidth());
+            const auto distFromEdge = juce::jmin (normX, 1.0f - normX) * 2.0f;   // 0 at edges, 1 at centre
+            constexpr float falloffSpan = 0.55f;    // how far in the fade reaches, as a fraction of the half-width
+            const auto mask = juce::jlimit (0.0f, 1.0f, 1.0f - distFromEdge / falloffSpan);
+            const auto centreFloor = 0.05f;         // a trace of shimmer even where the fade has finished
+
+            value *= centreFloor + (1.0f - centreFloor) * juce::jmap (edgeFalloff, 0.0f, 1.0f, 1.0f, mask);
+        }
+
         value += 0.07f * (random.nextFloat() - 0.5f);
+        value = juce::jlimit (0.0f, 1.0f, value);
+
+        // Below 1, brightness scales the field down as before. Above 1 it
+        // lifts the floor towards white instead of just multiplying - the
+        // rails want even their shadow facets reading as lit ice rather than
+        // scaling every facet including the highlights past 1.0 and clipping
+        // the whole ring to a flat white.
+        value = brightness <= 1.0f
+                    ? value * brightness
+                    : juce::jmap (juce::jlimit (1.0f, 2.0f, brightness), 1.0f, 2.0f, value, 1.0f);
         value = juce::jlimit (0.0f, 1.0f, value);
 
         // Crystal is faintly blue in the shadows and white where it catches.
@@ -148,6 +173,60 @@ juce::Image createCrystalTexture (int width, int height, int seed,
 }
 
 //==============================================================================
+juce::Image createBrushedMetalTexture (int width, int height, int seed)
+{
+    const auto w = juce::jmax (1, width);
+    const auto h = juce::jmax (1, height);
+
+    juce::Image image (juce::Image::ARGB, w, h, false);
+    juce::Graphics g (image);
+
+    const auto area = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h);
+
+    // A cool, dark gunmetal gradient - lighter at the top, so the plate reads
+    // as lit from above like the crystal around it, with no facets of its own.
+    {
+        juce::ColourGradient base (juce::Colour (0xff232b38), area.getCentreX(), 0.0f,
+                                   colours::backdropDeep, area.getCentreX(), area.getBottom(), false);
+        base.addColour (0.5, colours::panelFill);
+        g.setGradientFill (base);
+        g.fillRect (area);
+    }
+
+    juce::Random random (seed);
+
+    // Fine horizontal brushing, the same technique as the old steel panel:
+    // short randomised strokes rather than one texture-wide sweep, so it does
+    // not tile visibly when the same image backs several plates.
+    constexpr int strokeCount = 900;
+
+    for (int i = 0; i < strokeCount; ++i)
+    {
+        const auto y = random.nextFloat() * area.getHeight();
+        const auto x0 = random.nextFloat() * area.getWidth();
+        const auto length = 6.0f + random.nextFloat() * 30.0f;
+        const auto alpha = 0.015f + 0.03f * random.nextFloat();
+
+        g.setColour ((random.nextBool() ? juce::Colours::white : juce::Colours::black)
+                         .withAlpha (alpha));
+        g.drawLine (x0, y, x0 + length, y, 1.0f);
+    }
+
+    // A soft sheen along the top edge and a vignette in the corners, which is
+    // what keeps a dozen identical plates from reading as one flat sheet.
+    {
+        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.05f),
+                                    area.getCentreX(), 0.0f,
+                                    juce::Colours::white.withAlpha (0.0f),
+                                    area.getCentreX(), area.getHeight() * 0.4f, false);
+        g.setGradientFill (sheen);
+        g.fillRect (area);
+    }
+
+    return image;
+}
+
+//==============================================================================
 juce::Image createKnobBody (int diameter, float scale)
 {
     const auto size = juce::jmax (8, diameter);
@@ -171,8 +250,48 @@ juce::Image createKnobBody (int diameter, float scale)
     }
 
     // -- girdle: the ring of cut facets around the rim ----------------------
-    constexpr int numFacets = 24;
-    const auto girdleInner = radius * 0.88f;
+    // The reference reads as diamond dust rather than a gear: a couple of
+    // dozen small, irregularly sized facets rather than a handful of big even
+    // wedges, each one a sharp jump from its neighbour rather than a smooth
+    // gradient around the rim.
+    constexpr int numFacets = 30;
+    const auto girdleInner = radius * 0.74f;
+
+    juce::Random facetRandom (0xd1a3f7);
+
+    // Irregular angular steps, so the facets vary in size the way a real cut
+    // does - a perfectly even wedge count reads as a pinwheel, not a stone.
+    std::array<float, numFacets> weights {};
+    float weightSum = 0.0f;
+
+    for (auto& wt : weights)
+    {
+        wt = 0.55f + facetRandom.nextFloat();
+        weightSum += wt;
+    }
+
+    std::array<float, numFacets + 1> boundary {};
+    {
+        float accum = 0.0f;
+
+        for (int i = 0; i < numFacets; ++i)
+        {
+            boundary[(size_t) i] = accum / weightSum * juce::MathConstants<float>::twoPi;
+            accum += weights[(size_t) i];
+        }
+
+        boundary[numFacets] = juce::MathConstants<float>::twoPi;
+    }
+
+    // Looks one facet past the array end when a pavilion reaches into its
+    // neighbour, wrapping the angle by a full turn rather than the index.
+    auto boundaryAt = [&boundary, numFacets] (int idx)
+    {
+        if (idx <= numFacets)
+            return boundary[(size_t) idx];
+
+        return boundary[(size_t) (idx - numFacets)] + juce::MathConstants<float>::twoPi;
+    };
 
     auto litAt = [] (float angle)
     {
@@ -180,10 +299,14 @@ juce::Image createKnobBody (int diameter, float scale)
         return 0.5f + 0.5f * std::cos (angle + juce::MathConstants<float>::halfPi);
     };
 
-    auto silver = [] (float lit)
+    auto silver = [] (float lit, float sparkle)
     {
-        const auto tone = juce::jlimit (0.0f, 1.0f, 0.62f + 0.34f * lit * lit);
-        return juce::Colour::fromFloatRGBA (tone * 0.96f, tone * 0.98f, tone, 1.0f);
+        // Sparkle carries most of the contrast, not the smooth directional
+        // term: a real cut stone's facets catch a point light almost at
+        // random, all round the ring, rather than fading smoothly from one
+        // bright side to one dark side like a lit sphere.
+        const auto tone = juce::jlimit (0.0f, 1.0f, 0.56f + 0.22f * lit * lit + sparkle);
+        return juce::Colour::fromFloatRGBA (tone * 0.97f, tone * 0.99f, tone, 1.0f);
     };
 
     // Two triangles per step, one pointing in and one pointing out, so the ring
@@ -191,10 +314,11 @@ juce::Image createKnobBody (int diameter, float scale)
     // background showing between them, which reads as a row of teeth.
     for (int i = 0; i < numFacets; ++i)
     {
-        const auto a0 = juce::MathConstants<float>::twoPi * (float) i / (float) numFacets;
-        const auto a1 = juce::MathConstants<float>::twoPi * (float) (i + 1) / (float) numFacets;
+        const auto a0 = boundaryAt (i);
+        const auto a1 = boundaryAt (i + 1);
+        const auto a2 = boundaryAt (i + 2);
         const auto mid0 = (a0 + a1) * 0.5f;
-        const auto mid1 = mid0 + juce::MathConstants<float>::twoPi / (float) numFacets;
+        const auto mid1 = (a1 + a2) * 0.5f;
 
         auto rim = [&] (float angle)
         {
@@ -220,14 +344,17 @@ juce::Image createKnobBody (int diameter, float scale)
         pavilion.lineTo (inner (mid1));
         pavilion.closeSubPath();
 
-        g.setColour (silver (litAt (mid0)));
+        const auto sparkleA = 0.60f * (facetRandom.nextFloat() - 0.5f);
+        const auto sparkleB = 0.60f * (facetRandom.nextFloat() - 0.5f);
+
+        g.setColour (silver (litAt (mid0), sparkleA));
         g.fillPath (crown);
 
-        g.setColour (silver (litAt (a1)).darker (0.10f));
+        g.setColour (silver (litAt (a1), sparkleB).darker (0.14f));
         g.fillPath (pavilion);
 
-        g.setColour (juce::Colours::white.withAlpha (0.12f + 0.20f * litAt (mid0)));
-        g.strokePath (crown, juce::PathStrokeType (juce::jmax (0.4f, 0.7f * scale)));
+        g.setColour (juce::Colours::white.withAlpha (0.10f + 0.16f * litAt (mid0)));
+        g.strokePath (crown, juce::PathStrokeType (juce::jmax (0.4f, 0.6f * scale)));
     }
 
     // -- table: the brushed silver face -------------------------------------
@@ -291,70 +418,7 @@ juce::Image createKnobBody (int diameter, float scale)
     return image;
 }
 
-//==============================================================================
-juce::Image createFaderCap (int width, int height, bool horizontal, float scale)
-{
-    juce::ignoreUnused (horizontal);
 
-    const auto w = juce::jmax (6, width);
-    const auto h = juce::jmax (6, height);
-    juce::Image image (juce::Image::ARGB, w, h, true);
-
-    juce::Graphics g (image);
-    const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h)
-                            .reduced (juce::jmax (1.0f, 2.0f * scale));
-
-    // Emerald cut: a rectangle with the corners taken off.
-    const auto chamfer = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.22f;
-
-    auto cutRectangle = [chamfer] (juce::Rectangle<float> r)
-    {
-        juce::Path p;
-        p.startNewSubPath (r.getX() + chamfer, r.getY());
-        p.lineTo (r.getRight() - chamfer, r.getY());
-        p.lineTo (r.getRight(), r.getY() + chamfer);
-        p.lineTo (r.getRight(), r.getBottom() - chamfer);
-        p.lineTo (r.getRight() - chamfer, r.getBottom());
-        p.lineTo (r.getX() + chamfer, r.getBottom());
-        p.lineTo (r.getX(), r.getBottom() - chamfer);
-        p.lineTo (r.getX(), r.getY() + chamfer);
-        p.closeSubPath();
-        return p;
-    };
-
-    const auto outline = cutRectangle (bounds);
-
-    {
-        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.75f),
-                                 (int) juce::jmax (2.0f, 6.0f * scale),
-                                 { 0, (int) juce::jmax (1.0f, 2.0f * scale) });
-        shadow.drawForPath (g, const_cast<juce::Path&> (outline));
-    }
-
-    juce::ColourGradient grad (juce::Colour (0xffeaf6ff), bounds.getX(), bounds.getY(),
-                               juce::Colour (0xff6f8496), bounds.getRight(), bounds.getBottom(), false);
-    grad.addColour (0.45, juce::Colour (0xffc6dcee));
-    grad.addColour (0.62, juce::Colour (0xff92a7bb));
-    g.setGradientFill (grad);
-    g.fillPath (outline);
-
-    // Inner table, and the step down to it, which is what reads as a cut stone.
-    const auto table = bounds.reduced (juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.20f);
-    const auto tablePath = cutRectangle (table);
-
-    juce::ColourGradient inner (juce::Colour (0xffd8ecfb), table.getX(), table.getBottom(),
-                                juce::Colour (0xfff6fbff), table.getRight(), table.getY(), false);
-    g.setGradientFill (inner);
-    g.fillPath (tablePath);
-
-    g.setColour (colours::accent.withAlpha (0.35f));
-    g.strokePath (tablePath, juce::PathStrokeType (juce::jmax (0.5f, 0.9f * scale)));
-
-    g.setColour (juce::Colours::white.withAlpha (0.55f));
-    g.strokePath (outline, juce::PathStrokeType (juce::jmax (0.6f, 1.0f * scale)));
-
-    return image;
-}
 
 //==============================================================================
 void drawScrew (juce::Graphics& g, juce::Point<float> centre, float radius)
@@ -534,6 +598,26 @@ void drawDiamond (juce::Graphics& g, juce::Rectangle<float> bounds, float scale)
 
     g.setColour (juce::Colours::white.withAlpha (0.8f));
     g.strokePath (outline, juce::PathStrokeType (juce::jmax (0.7f, 1.2f * scale)));
+}
+
+void drawDiamondOutline (juce::Graphics& g, juce::Rectangle<float> bounds, float scale, juce::Colour colour)
+{
+    const auto outline = makeDiamondPath (bounds);
+    const auto x = bounds.getX(), y = bounds.getY();
+    const auto w = bounds.getWidth(), h = bounds.getHeight();
+    const auto crownY = y + h * 0.34f;
+
+    juce::Path cuts;
+    cuts.startNewSubPath (x, crownY);
+    cuts.lineTo (x + w, crownY);
+    cuts.startNewSubPath (x + w * 0.5f, crownY);
+    cuts.lineTo (x + w * 0.5f, y + h);
+
+    g.setColour (colour.withAlpha (0.35f));
+    g.strokePath (cuts, juce::PathStrokeType (juce::jmax (0.4f, 0.6f * scale)));
+
+    g.setColour (colour.withAlpha (0.7f));
+    g.strokePath (outline, juce::PathStrokeType (juce::jmax (0.5f, 0.9f * scale)));
 }
 
 } // namespace dr::theme

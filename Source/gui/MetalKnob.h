@@ -6,8 +6,10 @@ namespace dr
 {
 
 /**
-    A brushed aluminium knob: cached machined body, a rotating green pointer,
-    engraved tick marks and end-of-scale figures, and a caption underneath.
+    A diamond-cut knob: the body is a photographic asset cropped from the
+    reference mockup (with its pointer inpainted back out), a rotating accent
+    pointer drawn on top, engraved tick marks and end-of-scale figures, and a
+    caption underneath.
 
     The component owns its whole label block, so laying one out is a matter of
     handing it the rectangle from the panel artwork.
@@ -28,8 +30,6 @@ private:
     juce::Rectangle<float> getKnobBounds() const;
 
     juce::String caption, minLabel, maxLabel;
-    juce::Image bodyImage;
-    int cachedDiameter = 0;
     float scale = 1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MetalKnob)

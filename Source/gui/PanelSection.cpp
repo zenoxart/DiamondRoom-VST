@@ -25,15 +25,12 @@ void LedButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 
     const auto on = getToggleState();
 
-    // Chrome bezel.
-    {
-        juce::ColourGradient bezel (juce::Colour (0xff5d6b7e), lens.getX(), lens.getY(),
-                                    juce::Colour (0xff10161f), lens.getRight(), lens.getBottom(), false);
-        g.setGradientFill (bezel);
-        g.fillEllipse (lens);
-    }
+    // Just a hint of a dark socket - the reference reads as a bare glowing
+    // orb sitting on the plate, not a lamp set into a chrome bezel.
+    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    g.fillEllipse (lens);
 
-    lens = lens.reduced (juce::jmax (1.0f, diameter * 0.14f));
+    lens = lens.reduced (juce::jmax (1.0f, diameter * 0.08f));
 
     if (on)
     {

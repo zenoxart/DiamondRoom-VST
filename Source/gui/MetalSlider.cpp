@@ -1,4 +1,5 @@
 #include "MetalSlider.h"
+#include <BinaryData.h>
 
 namespace dr
 {
@@ -9,18 +10,36 @@ namespace
     constexpr float captionRow      = 34.0f;
     constexpr float figureRow       = 26.0f;
     constexpr float trackThickness  = 8.0f;
-    constexpr float masterTrackThickness = 13.0f;
-    constexpr float capLongSide     = 62.0f;
-    constexpr float capShortSide    = 48.0f;
+    constexpr float masterTrackThickness = 9.0f;
 
-    // The master fader carries a heavier cap than the section faders.
-    constexpr float masterCapExtraBreadth = 20.0f;
-    constexpr float masterCapExtraLength  = 14.0f;
+    // The "major" dimension of each gem, in design units - its height, since
+    // both cuts stand taller than they are wide. The other dimension is
+    // derived from the asset's own pixel aspect ratio, so the cut stays
+    // faithful to the source crop rather than an assumed rectangle.
+    constexpr float sectionCapTargetHeight = 52.0f;
+    constexpr float masterCapTargetHeight  = 74.0f;
 
     // How far the graduations reach out from the track. The component itself
     // is wider than this so the caption underneath has room to breathe.
     constexpr float trackBreadth    = 84.0f;
     constexpr int   numGraduations  = 21;
+
+    /** Gem caps cropped from the reference mockup: a squarer pillow cut for
+        the section faders, a tall baguette for the master one. Decoded once
+        and shared by every fader on the panel. */
+    const juce::Image& sectionGemAsset()
+    {
+        static const juce::Image image = juce::ImageCache::getFromMemory (
+            BinaryData::FaderGemSection_png, BinaryData::FaderGemSection_pngSize);
+        return image;
+    }
+
+    const juce::Image& masterGemAsset()
+    {
+        static const juce::Image image = juce::ImageCache::getFromMemory (
+            BinaryData::FaderGemMaster_png, BinaryData::FaderGemMaster_pngSize);
+        return image;
+    }
 }
 
 juce::Slider::SliderLayout MetalSlider::TrackLayout::getSliderLayout (juce::Slider& slider)
@@ -53,7 +72,6 @@ void MetalSlider::setDesignScale (float newScale)
     if (! juce::approximatelyEqual (scale, newScale))
     {
         scale = newScale;
-        cachedCapSize = {};
 
         // The track geometry is scale dependent, so the draggable region has
         // to be recalculated along with the artwork.
@@ -67,7 +85,17 @@ void MetalSlider::resized()
     // Slider::resized() is what derives the region the mouse is mapped onto.
     // Skipping it leaves that region one pixel wide.
     juce::Slider::resized();
-    cachedCapSize = {};
+}
+
+juce::Rectangle<float> MetalSlider::getCapSize() const
+{
+    const auto& asset = horizontal ? masterGemAsset() : sectionGemAsset();
+    const auto aspect = asset.isValid() && asset.getHeight() > 0
+                             ? (float) asset.getWidth() / (float) asset.getHeight()
+                             : 1.0f;
+
+    const auto height = (horizontal ? masterCapTargetHeight : sectionCapTargetHeight) * scale;
+    return { height * aspect, height };
 }
 
 juce::Rectangle<float> MetalSlider::getTrackArea() const
@@ -79,14 +107,13 @@ juce::Rectangle<float> MetalSlider::getTrackArea() const
         area.removeFromTop (captionRow * scale);
         area.removeFromBottom (figureRow * scale);
 
-        // Inset by the cap's breadth so it stays inside the plate at both ends.
-        const auto capBreadth = (capShortSide + masterCapExtraBreadth) * scale;
-        return area.withSizeKeepingCentre (area.getWidth() - capBreadth, area.getHeight());
+        // Inset by the cap's width so it stays inside the plate at both ends.
+        return area.withSizeKeepingCentre (area.getWidth() - getCapSize().getWidth(), area.getHeight());
     }
 
     area.removeFromBottom (captionRow * scale);
     return area.withSizeKeepingCentre (juce::jmin (area.getWidth(), trackBreadth * scale),
-                                       area.getHeight() - capShortSide * scale);
+                                       area.getHeight() - getCapSize().getHeight());
 }
 
 juce::Rectangle<float> MetalSlider::getCapBounds (juce::Rectangle<float> track) const
@@ -96,17 +123,16 @@ juce::Rectangle<float> MetalSlider::getCapBounds (juce::Rectangle<float> track) 
                                 ? (float) ((getValue() - range.getStart()) / range.getLength())
                                 : 0.0f;
 
+    const auto size = getCapSize();
+
     if (horizontal)
     {
         const auto x = track.getX() + proportion * track.getWidth();
-        return juce::Rectangle<float> ((capShortSide + masterCapExtraBreadth) * scale,
-                                       (capLongSide + masterCapExtraLength) * scale)
-                   .withCentre ({ x, track.getCentreY() });
+        return size.withCentre ({ x, track.getCentreY() });
     }
 
     const auto y = track.getBottom() - proportion * track.getHeight();
-    return juce::Rectangle<float> (capLongSide * scale, capShortSide * scale)
-               .withCentre ({ track.getCentreX(), y });
+    return size.withCentre ({ track.getCentreX(), y });
 }
 
 void MetalSlider::paint (juce::Graphics& g)
@@ -173,39 +199,32 @@ void MetalSlider::paint (juce::Graphics& g)
         g.setGradientFill (grad);
         g.fillRoundedRectangle (slot, corner);
 
-        // The master fader reads as a lit filament running the width of the
-        // panel; the section faders stay dark so they do not compete with it.
+        // The master fader reads as a lit hairline running the width of the
+        // panel - a thin glowing wire rather than a thick neon bar - while the
+        // section faders stay dark so they do not compete with it.
         if (horizontal)
         {
-            const auto filament = slot.withSizeKeepingCentre (slot.getWidth(), thickness * 0.34f);
+            const auto filament = slot.withSizeKeepingCentre (slot.getWidth(), thickness * 0.16f);
 
-            for (int pass = 3; pass >= 1; --pass)
+            for (int pass = 2; pass >= 1; --pass)
             {
-                g.setColour (theme::colours::accent.withAlpha (0.10f * (float) pass));
-                g.fillRoundedRectangle (filament.expanded (0.0f, thickness * 0.30f * (float) pass),
+                g.setColour (theme::colours::accent.withAlpha (0.09f * (float) pass));
+                g.fillRoundedRectangle (filament.expanded (0.0f, thickness * 0.42f * (float) pass),
                                         corner);
             }
 
-            g.setColour (theme::colours::accent.withAlpha (0.85f));
+            g.setColour (theme::colours::accent.withAlpha (0.95f));
             g.fillRoundedRectangle (filament, filament.getHeight() * 0.5f);
         }
     }
 
-    // -- cap ---------------------------------------------------------------
+    // -- cap: a gem cropped from the reference mockup -----------------------
     {
         const auto cap = getCapBounds (track);
-        const juce::Rectangle<int> capSize { juce::roundToInt (cap.getWidth()),
-                                             juce::roundToInt (cap.getHeight()) };
-
-        if (capImage.isNull() || cachedCapSize != capSize)
-        {
-            capImage = theme::createFaderCap (capSize.getWidth(), capSize.getHeight(),
-                                              horizontal, scale);
-            cachedCapSize = capSize;
-        }
+        const auto& asset = horizontal ? masterGemAsset() : sectionGemAsset();
 
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-        g.drawImageAt (capImage, juce::roundToInt (cap.getX()), juce::roundToInt (cap.getY()));
+        g.drawImage (asset, cap, juce::RectanglePlacement::stretchToFit);
     }
 
     // -- lettering ---------------------------------------------------------

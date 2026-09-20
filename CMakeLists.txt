@@ -11,6 +11,17 @@ endif()
 
 add_subdirectory(JUCE)
 
+# Photographic assets cropped from the reference mockup: the knob body (with
+# its pointer inpainted out, since that is drawn separately and rotated per
+# value), the two fader gems, and the title badge. Everything else on the
+# panel is still generated procedurally.
+juce_add_binary_data(DiamondRoomAssets SOURCES
+    Assets/KnobBody.png
+    Assets/FaderGemSection.png
+    Assets/FaderGemMaster.png
+    Assets/TitleBadge.png
+)
+
 juce_add_plugin(DiamondRoom
     COMPANY_NAME              "ZenoxArt"
     PLUGIN_MANUFACTURER_CODE  Znxa
@@ -55,6 +66,7 @@ target_compile_definitions(DiamondRoom PUBLIC
 target_link_libraries(DiamondRoom PRIVATE
     juce::juce_audio_utils
     juce::juce_dsp
+    DiamondRoomAssets
     PUBLIC
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
@@ -71,6 +83,7 @@ if (DIAMONDROOM_BUILD_SCREENSHOT)
     target_sources(DiamondRoomShot PRIVATE Tools/RenderEditor.cpp)
     target_link_libraries(DiamondRoomShot PRIVATE
         DiamondRoom
+        DiamondRoomAssets
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags)

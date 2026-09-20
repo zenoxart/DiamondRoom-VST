@@ -31,18 +31,23 @@ namespace colours
 //==============================================================================
 /** Faceted crystal, generated once and cached.
 
-    `brightness` scales the whole field: the side rails are cut bright, the
-    panel behind the plates is dark enough to read controls against.
-    `shardSize` is the rough width a facet should end up, in pixels, which is
-    what decides how deep the subdivision runs. */
-juce::Image createCrystalTexture (int width, int height, int seed,
-                                  float brightness, float shardSize);
+    `brightness` scales the whole field. `shardSize` is the rough width a facet
+    should end up, in pixels, which is what decides how deep the subdivision
+    runs. `edgeFalloff` (0..1) fades the field out towards the horizontal
+    centre of the image, so it reads as a crystal formation breaking in from
+    the left and right rather than a texture that fills the whole plate - the
+    reference art keeps the crystal on the rails and the corners, and leaves
+    the centre of the panel close to flat. 0 disables the fade entirely. */
+juce::Image createCrystalTexture (int width, int height, int seed, float brightness,
+                                  float shardSize, float edgeFalloff = 0.0f);
 
-/** Diamond-cut knob body, without the pointer. */
+/** Plain brushed dark metal, no crystal - what the control plates sit on. */
+juce::Image createBrushedMetalTexture (int width, int height, int seed);
+
+/** Procedural diamond-cut knob body, without the pointer. Superseded by the
+    photographic KnobBody asset (see MetalKnob.cpp) but kept as a fallback
+    should that ever need replacing without new reference art on hand. */
 juce::Image createKnobBody (int diameter, float scale);
-
-/** The emerald-cut gem used as a fader cap. */
-juce::Image createFaderCap (int width, int height, bool horizontal, float scale);
 
 //==============================================================================
 /** A recessed screw head. */
@@ -63,6 +68,12 @@ void drawKnobTicks (juce::Graphics& g, juce::Point<float> centre, float radius,
 
 /** A brilliant-cut gem seen face on, used as the badge and the rail marks. */
 juce::Path makeDiamondPath (juce::Rectangle<float> bounds);
+
+/** The glowing, gradient-filled cut - the title badge. */
 void drawDiamond (juce::Graphics& g, juce::Rectangle<float> bounds, float scale);
+
+/** A plain line-art outline of the same cut - the small mark on the rails. */
+void drawDiamondOutline (juce::Graphics& g, juce::Rectangle<float> bounds, float scale,
+                         juce::Colour colour = colours::text);
 
 } // namespace dr::theme

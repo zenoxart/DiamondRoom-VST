@@ -1,4 +1,5 @@
 #include "MetalKnob.h"
+#include <BinaryData.h>
 
 namespace dr
 {
@@ -11,6 +12,18 @@ namespace
     // Fractions of the component height, in design units.
     constexpr float scaleRowHeight   = 26.0f;
     constexpr float captionRowHeight = 34.0f;
+
+    /** The knob body, cropped from the reference mockup. Its own pointer
+        streak has been inpainted back out, since a fresh one is drawn on top
+        at whatever angle the current value calls for - the asset only has to
+        supply one rotation-independent body, not a set of them. Decoded once
+        and shared by every knob on the panel. */
+    const juce::Image& knobBodyAsset()
+    {
+        static const juce::Image image = juce::ImageCache::getFromMemory (
+            BinaryData::KnobBody_png, BinaryData::KnobBody_pngSize);
+        return image;
+    }
 }
 
 MetalKnob::MetalKnob (const juce::String& captionIn,
@@ -32,7 +45,6 @@ void MetalKnob::setDesignScale (float newScale)
     if (! juce::approximatelyEqual (scale, newScale))
     {
         scale = newScale;
-        cachedDiameter = 0;
         resized();
         repaint();
     }
@@ -53,7 +65,6 @@ juce::Rectangle<float> MetalKnob::getKnobBounds() const
 void MetalKnob::resized()
 {
     juce::Slider::resized();
-    cachedDiameter = 0;
 }
 
 void MetalKnob::paint (juce::Graphics& g)
@@ -69,16 +80,12 @@ void MetalKnob::paint (juce::Graphics& g)
     theme::drawKnobTicks (g, centre, radius * 1.13f, 15, scale);
 
     // -- body --------------------------------------------------------------
-    const auto diameter = juce::roundToInt (knob.getWidth());
-
-    if (bodyImage.isNull() || cachedDiameter != diameter)
-    {
-        bodyImage = theme::createKnobBody (diameter, scale);
-        cachedDiameter = diameter;
-    }
-
+    // One shared asset, scaled to fit each knob's own size - downscaling a
+    // photographic source resamples cleanly, which is what lets one 230 px
+    // crop stand in for every knob from the two big end ones down to the
+    // small per-reverb pairs.
     g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-    g.drawImageAt (bodyImage, juce::roundToInt (knob.getX()), juce::roundToInt (knob.getY()));
+    g.drawImage (knobBodyAsset(), knob, juce::RectanglePlacement::stretchToFit);
 
     // -- pointer -----------------------------------------------------------
     const auto range = getRange();

@@ -1,9 +1,20 @@
 #include "PluginEditor.h"
+#include <BinaryData.h>
 
 using namespace dr;
 
 namespace
 {
+    /** The title badge, cropped straight from the reference mockup complete
+        with its own glow - decorative and never rotated or resized per
+        state, so unlike the knob it needs no further work beyond loading. */
+    const juce::Image& titleBadgeAsset()
+    {
+        static const juce::Image image = juce::ImageCache::getFromMemory (
+            BinaryData::TitleBadge_png, BinaryData::TitleBadge_pngSize);
+        return image;
+    }
+
     // Panel artwork coordinates, in design units (2001 x 764).
     const juce::Rectangle<int> drivePanelArea { 110, 150, 238, 380 };
     const juce::Rectangle<int> tubePanelArea  { 1652, 150, 238, 380 };
@@ -339,15 +350,17 @@ void DiamondRoomAudioProcessorEditor::buildBackground()
 
     const auto uiScale = (float) w / (float) theme::designWidth;
 
-    // Three separate cuts, at three brightnesses: the rails are the showpiece,
-    // the panel behind the plates is dark enough to read controls against, and
-    // the plates themselves are darker still.
-    panelTexture = theme::createCrystalTexture (w, h, 20240517, 0.40f, 110.0f * uiScale);
-    plateTexture = theme::createCrystalTexture (juce::jmax (1, w / 3), juce::jmax (1, h / 3),
-                                                77345, 0.30f, 26.0f * uiScale);
+    // The rails are the crystal showpiece, at full brightness and no fade.
+    // The main backdrop carries the same cut but faded out from the edges, so
+    // it reads as the rails' crystal breaking a little way into the panel
+    // rather than a texture covering the whole plugin. The control plates
+    // themselves are plain brushed metal - no crystal at all - which is what
+    // keeps a bank of six of them from turning into visual noise.
+    panelTexture = theme::createCrystalTexture (w, h, 20240517, 0.85f, 110.0f * uiScale, 1.0f);
+    plateTexture = theme::createBrushedMetalTexture (juce::jmax (1, w / 3), juce::jmax (1, h / 3), 77345);
     railTexture  = theme::createCrystalTexture (
         juce::jmax (1, juce::roundToInt ((float) railWidth * uiScale)),
-        h, 991733, 1.5f, 52.0f * uiScale);
+        h, 991733, 1.7f, 90.0f * uiScale);
 
     for (auto* panel : { &drivePanel, &tubePanel, &mixPanel })
         panel->setTexture (plateTexture);
@@ -516,7 +529,7 @@ void DiamondRoomAudioProcessorEditor::drawRackFrame (juce::Graphics& g, float sc
             const auto d = 26.0f * scale;
             const auto gem = juce::Rectangle<float> (d, d * 0.92f)
                                  .withCentre ({ area.getCentreX(), bounds.getHeight() * 0.62f });
-            theme::drawDiamond (g, gem, scale);
+            theme::drawDiamondOutline (g, gem, scale, theme::colours::text);
         }
 
         // Lit seam between the ear and the main panel.
@@ -572,17 +585,17 @@ void DiamondRoomAudioProcessorEditor::drawTitle (juce::Graphics& g, float scale)
 
     // The badge sits at the top edge, like a stone set into the panel.
     {
-        const auto d = 50.0f * scale;
-        const auto gem = juce::Rectangle<float> (d, d * 0.92f)
-                             .withCentre ({ plate.getCentreX(), 30.0f * scale });
+        const auto& asset = titleBadgeAsset();
+        const auto aspect = asset.isValid() && asset.getHeight() > 0
+                                 ? (float) asset.getWidth() / (float) asset.getHeight()
+                                 : 1.0f;
 
-        for (int pass = 3; pass >= 1; --pass)
-        {
-            g.setColour (theme::colours::accent.withAlpha (0.07f * (float) pass));
-            g.fillEllipse (gem.expanded (d * 0.20f * (float) pass));
-        }
+        const auto width = 128.0f * scale;
+        const auto gem = juce::Rectangle<float> (width, width / aspect)
+                             .withCentre ({ plate.getCentreX(), 26.0f * scale });
 
-        theme::drawDiamond (g, gem, scale);
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        g.drawImage (asset, gem, juce::RectanglePlacement::stretchToFit);
     }
 
     const auto titleArea = juce::Rectangle<float> (plate.getX(), 60.0f * scale,

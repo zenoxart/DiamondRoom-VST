@@ -96,6 +96,11 @@ If a host still has the plugin loaded, that copy fails with a long MSB3073 error
 even though the build itself succeeded - Windows will not overwrite a DLL that is
 mapped into a running process. Close the host and build again.
 
+The `Assets/*.png` files are already-prepared crops committed to the repo - a
+normal build does not need Python, OpenCV or the original mockup at all. They
+only come back into play if the source art changes and the crops need redoing;
+see "Photographic vs. procedural artwork" below for how they were made.
+
 ## Development helper
 
 `Tools/RenderEditor.cpp` builds as an optional console app that renders the
@@ -157,7 +162,32 @@ Source/
     TrueVerb.*          geometric room simulator
     CleanVoiceTube.*    CleanVoice's valve compressor, behind a Mix control
   gui/
-    Theme.*             procedural crystal, diamond-cut knob and gem artwork
+    Theme.*             procedural crystal field, brushed metal, screws, text
     MetalKnob.*         MetalSlider.*      PanelSection.*
     RackButton.*        top rail switches and the preset name plate
+Assets/                 photographic crops from the reference mockup - see below
 ```
+
+### Photographic vs. procedural artwork
+
+Most of the panel is generated in code (`gui/Theme.cpp`): the crystal field,
+the brushed metal plates, screws, lettering. Four elements instead are crops
+taken directly from the reference mockup and embedded as binary data
+(`juce_add_binary_data`, `Assets/*.png`), because no amount of procedural
+tuning matched the source photograph as well as the source photograph does:
+
+- `KnobBody.png` - the knob face and its diamond-cut girdle. The reference's
+  own pointer streak is inpainted back out (OpenCV `INPAINT_TELEA`, masked by
+  hue/saturation so it does not also erase the grey tick marks) before the
+  crop is taken, since a fresh pointer is drawn on top at whatever angle the
+  live parameter value calls for - the asset only has to supply one
+  rotation-independent body, not a family of them at every angle.
+- `FaderGemSection.png` / `FaderGemMaster.png` - the two fader caps. These
+  never rotate, only translate, so they needed no cleanup at all.
+- `TitleBadge.png` - the glowing diamond above the title.
+
+All four are decoded once via `juce::ImageCache` and drawn scaled to fit
+(`Graphics::drawImage` with high-quality resampling), so one ~230 px knob crop
+stands in for every knob on the panel from the two big end ones down to the
+small per-reverb pairs, and downscaling a photograph resamples a great deal
+more cleanly than upscaling one would.
