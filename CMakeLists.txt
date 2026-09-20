@@ -5,6 +5,8 @@ project(DiamondRoom VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(DIAMONDROOM_COPY_PLUGIN_AFTER_BUILD "Install the built plugin in the system VST3 folder" ON)
+
 if (MSVC)
     add_compile_options(/MP)
 endif()
@@ -30,7 +32,7 @@ juce_add_plugin(DiamondRoom
     NEEDS_MIDI_OUTPUT         FALSE
     IS_MIDI_EFFECT            FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD   TRUE
+    COPY_PLUGIN_AFTER_BUILD   ${DIAMONDROOM_COPY_PLUGIN_AFTER_BUILD}
     VST3_CATEGORIES           Fx Reverb
 )
 

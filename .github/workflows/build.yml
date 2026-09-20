@@ -1,0 +1,140 @@
+name: Build VST3
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vst3-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out Diamond Room
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check out JUCE 8.0.4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: juce-framework/JUCE
+          ref: 51d11a2be6d5c97ccf12b4e5e827006e19f0555a
+          path: JUCE
+          persist-credentials: false
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
+          -DDIAMONDROOM_BUILD_SCREENSHOT=ON
+
+      - name: Build plugin and test helper
+        run: cmake --build build --config Release --parallel 2 --target DiamondRoom_VST3 DiamondRoomShot
+
+      - name: Test audio, controls and lifecycle
+        run: |
+          $tool = './build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe'
+          foreach ($test in @('--audio', '--ui', '--drive', '--tube', '--presets', '--lifecycle')) {
+            & $tool $test
+            if ($LASTEXITCODE -ne 0) { throw "$test failed with exit code $LASTEXITCODE" }
+          }
+
+      - name: Package Windows VST3
+        run: |
+          $plugin = 'build/DiamondRoom_artefacts/Release/VST3/Diamond Room.vst3'
+          if (!(Test-Path "$plugin/Contents/x86_64-win/Diamond Room.vst3")) {
+            throw 'The VST3 bundle is incomplete.'
+          }
+          New-Item -ItemType Directory -Path package, dist -Force | Out-Null
+          Copy-Item -LiteralPath $plugin -Destination package -Recurse
+          Copy-Item LICENSE package/LICENSE.txt
+          Copy-Item JUCE/LICENSE.md package/JUCE-LICENSE.md
+          @"
+          Diamond Room - Windows x64 VST3
+          Build commit: $env:GITHUB_SHA
+          Source: https://github.com/$env:GITHUB_REPOSITORY/tree/$env:GITHUB_SHA
+
+          Close your DAW. Extract this ZIP and copy the entire 'Diamond Room.vst3'
+          folder to C:\Program Files\Common Files\VST3\, then rescan plugins in your DAW.
+          Keep the Contents folder and all files inside it intact.
+
+          This is an unsigned development build from main, not a stable release.
+          "@ | Set-Content package/INSTALL.txt
+          Compress-Archive -Path 'package/*' -DestinationPath dist/DiamondRoom-Windows-x64.zip
+          $hash = (Get-FileHash dist/DiamondRoom-Windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  DiamondRoom-Windows-x64.zip" | Set-Content dist/SHA256SUMS.txt
+
+      - name: Upload download package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: DiamondRoom-Windows-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Update development download
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: DiamondRoom-Windows-x64
+          path: dist
+
+      - name: Publish rolling development build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Do not replace a newer main build when an old workflow is re-run.
+          current_main="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$current_main" != "$GITHUB_SHA" ]]; then
+            echo 'A newer commit is on main; skipping the rolling release.'
+            exit 0
+          fi
+          cat > notes.md <<EOF
+          Automatically built Windows x64 VST3 from main.
+
+          Commit: [$GITHUB_SHA](https://github.com/$GH_REPO/commit/$GITHUB_SHA)
+          Build: https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID
+
+          Download **DiamondRoom-Windows-x64.zip**, extract it, and copy the complete
+          **Diamond Room.vst3** folder into **C:\Program Files\Common Files\VST3**.
+          Restart your DAW and rescan plugins. SHA256SUMS.txt contains the ZIP checksum.
+
+          This unsigned development build updates after successful main builds.
+          Audio, UI, preset and lifecycle checks pass before publishing; this does
+          not guarantee compatibility with every host.
+          EOF
+          if gh release view latest-build >/dev/null 2>&1; then
+            # Only the dedicated rolling-build tag moves; version tags are untouched.
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/latest-build" \
+              -f sha="$GITHUB_SHA" -F force=true
+            gh release upload latest-build dist/* --clobber
+            gh release edit latest-build --title 'Latest Windows development build' \
+              --notes-file notes.md --prerelease
+          else
+            gh release create latest-build dist/* --target "$GITHUB_SHA" \
+              --title 'Latest Windows development build' --notes-file notes.md --prerelease
+          fi
