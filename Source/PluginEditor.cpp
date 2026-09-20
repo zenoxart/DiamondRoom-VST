@@ -5,14 +5,14 @@ using namespace dr;
 namespace
 {
     // Panel artwork coordinates, in design units (2001 x 764).
-    const juce::Rectangle<int> drivePanelArea { 110, 110, 238, 430 };
-    const juce::Rectangle<int> tubePanelArea  { 1652, 110, 238, 430 };
-    const juce::Rectangle<int> mixPanelArea   { 110, 556, 1780, 156 };
+    const juce::Rectangle<int> drivePanelArea { 110, 150, 238, 380 };
+    const juce::Rectangle<int> tubePanelArea  { 1652, 150, 238, 380 };
+    const juce::Rectangle<int> mixPanelArea   { 110, 542, 1780, 146 };
 
-    const juce::Rectangle<int> hPanelArea     { 362,  110, 310, 430 };
-    const juce::Rectangle<int> mannyPanelArea { 683,  110, 310, 430 };
-    const juce::Rectangle<int> valPanelArea   { 1004, 110, 310, 430 };
-    const juce::Rectangle<int> truePanelArea  { 1325, 110, 310, 430 };
+    const juce::Rectangle<int> hPanelArea     { 362,  150, 310, 380 };
+    const juce::Rectangle<int> mannyPanelArea { 683,  150, 310, 380 };
+    const juce::Rectangle<int> valPanelArea   { 1004, 150, 310, 380 };
+    const juce::Rectangle<int> truePanelArea  { 1325, 150, 310, 380 };
 
     constexpr int railWidth = 100;
 
@@ -337,12 +337,17 @@ void DiamondRoomAudioProcessorEditor::buildBackground()
     textureWidth = w;
     textureHeight = h;
 
-    // Three separate bakes so the rails and plates do not repeat the same
-    // blotches as the panel behind them.
-    panelTexture = theme::createPanelTexture (w, h, 20240517, 1.0f);
-    plateTexture = theme::createPanelTexture (juce::jmax (1, w / 2), juce::jmax (1, h / 2),
-                                              77345, 0.55f);
-    railTexture  = theme::createPanelTexture (juce::jmax (1, railWidth), h, 991733, 1.15f);
+    const auto uiScale = (float) w / (float) theme::designWidth;
+
+    // Three separate cuts, at three brightnesses: the rails are the showpiece,
+    // the panel behind the plates is dark enough to read controls against, and
+    // the plates themselves are darker still.
+    panelTexture = theme::createCrystalTexture (w, h, 20240517, 0.40f, 110.0f * uiScale);
+    plateTexture = theme::createCrystalTexture (juce::jmax (1, w / 3), juce::jmax (1, h / 3),
+                                                77345, 0.30f, 26.0f * uiScale);
+    railTexture  = theme::createCrystalTexture (
+        juce::jmax (1, juce::roundToInt ((float) railWidth * uiScale)),
+        h, 991733, 1.5f, 52.0f * uiScale);
 
     for (auto* panel : { &drivePanel, &tubePanel, &mixPanel })
         panel->setTexture (plateTexture);
@@ -368,11 +373,11 @@ void DiamondRoomAudioProcessorEditor::resized()
     // The two big knobs, centred on their plates.
     driveKnob.setDesignScale (scale);
     tubeKnob.setDesignScale (scale);
-    driveKnob.setBounds (scaleRect ({ 118, 205, 228, 288 }, scale));
-    tubeKnob.setBounds  (scaleRect ({ 1660, 205, 228, 288 }, scale));
+    driveKnob.setBounds (scaleRect ({ 118,  205, 228, 300 }, scale));
+    tubeKnob.setBounds  (scaleRect ({ 1660, 205, 228, 300 }, scale));
 
     masterMix.setDesignScale (scale);
-    masterMix.setBounds (scaleRect ({ 255, 558, 1490, 152 }, scale));
+    masterMix.setBounds (scaleRect ({ 255, 544, 1490, 144 }, scale));
 
     // Top rail: undo/redo and preset stepping to the left of the title, the
     // settings gear to the right of it.
@@ -380,12 +385,12 @@ void DiamondRoomAudioProcessorEditor::resized()
                           &presetPlate, &settingsButton })
         button->setDesignScale (scale);
 
-    undoButton.setBounds     (scaleRect ({ 118,  30,  56, 56 }, scale));
-    redoButton.setBounds     (scaleRect ({ 182,  30,  56, 56 }, scale));
-    prevPreset.setBounds     (scaleRect ({ 258,  30,  44, 56 }, scale));
-    presetPlate.setBounds    (scaleRect ({ 302,  30, 182, 56 }, scale));
-    nextPreset.setBounds     (scaleRect ({ 484,  30,  44, 56 }, scale));
-    settingsButton.setBounds (scaleRect ({ 1834, 30,  56, 56 }, scale));
+    undoButton.setBounds     (scaleRect ({ 118,  46,  52, 52 }, scale));
+    redoButton.setBounds     (scaleRect ({ 178,  46,  52, 52 }, scale));
+    prevPreset.setBounds     (scaleRect ({ 248,  46,  42, 52 }, scale));
+    presetPlate.setBounds    (scaleRect ({ 290,  46, 180, 52 }, scale));
+    nextPreset.setBounds     (scaleRect ({ 470,  46,  42, 52 }, scale));
+    settingsButton.setBounds (scaleRect ({ 1831, 46,  52, 52 }, scale));
 
     layoutStrip (hStrip,     hPanelArea,     scale);
     layoutStrip (mannyStrip, mannyPanelArea, scale);
@@ -409,10 +414,10 @@ void DiamondRoomAudioProcessorEditor::layoutStrip (ReverbStrip& strip,
     strip.mix.setDesignScale (scale);
 
     // The knob and fader components are wider than their controls: the extra
-    // room is where the engraved captions go.
-    strip.topKnob.setBounds    (scaleRect ({ x + 14,  173, 170, 190 }, scale));
-    strip.bottomKnob.setBounds (scaleRect ({ x + 14,  350, 170, 190 }, scale));
-    strip.mix.setBounds        (scaleRect ({ x + 150, 180, 170, 360 }, scale));
+    // room is where the captions go.
+    strip.topKnob.setBounds    (scaleRect ({ x + 14,  205, 170, 160 }, scale));
+    strip.bottomKnob.setBounds (scaleRect ({ x + 14,  370, 170, 160 }, scale));
+    strip.mix.setBounds        (scaleRect ({ x + 150, 205, 170, 325 }, scale));
 }
 
 //==============================================================================
@@ -466,12 +471,19 @@ void DiamondRoomAudioProcessorEditor::drawRackFrame (juce::Graphics& g, float sc
                                                  i == 0 ? 46.0f * scale
                                                         : bounds.getHeight() - 46.0f * scale });
 
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.fillRoundedRectangle (slot.expanded (2.0f * scale), 8.0f * scale);
-            g.setColour (juce::Colour (0xfff0efe9));
+            g.setColour (juce::Colours::black.withAlpha (0.7f));
+            g.fillRoundedRectangle (slot.expanded (2.5f * scale), 8.0f * scale);
+
+            juce::ColourGradient lens (juce::Colour (0xffe8f6ff), slot.getX(), slot.getY(),
+                                       theme::colours::accentDeep, slot.getRight(), slot.getBottom(), false);
+            g.setGradientFill (lens);
             g.fillRoundedRectangle (slot, 8.0f * scale);
-            g.setColour (juce::Colours::black.withAlpha (0.25f));
-            g.drawRoundedRectangle (slot.reduced (0.5f), 8.0f * scale, juce::jmax (0.8f, 1.4f * scale));
+
+            g.setColour (theme::colours::accent.withAlpha (0.35f));
+            g.drawRoundedRectangle (slot.expanded (2.5f * scale), 8.0f * scale,
+                                    juce::jmax (0.8f, 1.6f * scale));
+            g.setColour (juce::Colours::white.withAlpha (0.65f));
+            g.drawRoundedRectangle (slot.reduced (0.5f), 8.0f * scale, juce::jmax (0.8f, 1.2f * scale));
         }
 
         // Screws down the inner edge.
@@ -496,38 +508,59 @@ void DiamondRoomAudioProcessorEditor::drawRackFrame (juce::Graphics& g, float sc
                                       .translated (0.0f, side == 0 ? -18.0f * scale : 18.0f * scale);
 
             theme::drawEngravedText (g, "DIAMOND ROOM", textArea, juce::Justification::centred,
-                                     juce::jmax (7.0f, 21.0f * scale), true,
-                                     theme::colours::text.withAlpha (0.8f));
+                                     juce::jmax (7.0f, 20.0f * scale), false,
+                                     theme::colours::text.withAlpha (0.85f));
         }
 
         {
-            const auto d = 34.0f * scale;
-            const auto centre = juce::Point<float> (area.getCentreX(),
-                                                    bounds.getHeight() * 0.61f);
-            juce::Path diamond;
-            diamond.addQuadrilateral (centre.x, centre.y - d * 0.5f,
-                                      centre.x + d * 0.42f, centre.y,
-                                      centre.x, centre.y + d * 0.5f,
-                                      centre.x - d * 0.42f, centre.y);
-
-            g.setColour (juce::Colours::white.withAlpha (0.2f));
-            g.fillPath (diamond, juce::AffineTransform::translation (0.0f, 1.5f * scale));
-            g.setColour (theme::colours::engraveDark.withAlpha (0.8f));
-            g.fillPath (diamond);
+            const auto d = 26.0f * scale;
+            const auto gem = juce::Rectangle<float> (d, d * 0.92f)
+                                 .withCentre ({ area.getCentreX(), bounds.getHeight() * 0.62f });
+            theme::drawDiamond (g, gem, scale);
         }
 
-        // Hard edge between the ear and the main panel.
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        // Lit seam between the ear and the main panel.
         const auto edgeX = side == 0 ? area.getRight() : area.getX();
+        g.setColour (juce::Colours::black.withAlpha (0.75f));
         g.drawLine (edgeX, 0.0f, edgeX, bounds.getHeight(), juce::jmax (1.0f, 2.0f * scale));
-        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.setColour (theme::colours::accent.withAlpha (0.20f));
         g.drawLine (edgeX + (side == 0 ? 2.0f : -2.0f) * scale, 0.0f,
                     edgeX + (side == 0 ? 2.0f : -2.0f) * scale, bounds.getHeight(),
                     juce::jmax (0.8f, 1.4f * scale));
     }
 
-    // -- outer frame -------------------------------------------------------
-    g.setColour (juce::Colours::black.withAlpha (0.7f));
+    // -- footer and outer frame ---------------------------------------------
+    {
+        const auto plate = bounds.reduced (rail, 0.0f);
+        const auto footer = juce::Rectangle<float> (plate.getX(), bounds.getBottom() - 44.0f * scale,
+                                                    plate.getWidth(), 28.0f * scale);
+        const auto fontHeight = juce::jmax (7.0f, 19.0f * scale);
+
+        juce::Font font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
+                                            fontHeight, juce::Font::plain));
+        font.setExtraKerningFactor (0.34f);
+
+        const auto textWidth = juce::GlyphArrangement::getStringWidth (font, "DIAMOND ROOM");
+
+        g.setFont (font);
+        g.setColour (theme::colours::textDim.withAlpha (0.75f));
+        g.drawText ("DIAMOND ROOM", footer, juce::Justification::centred, false);
+
+        const auto y = footer.getCentreY();
+        const auto gap = textWidth * 0.5f + 26.0f * scale;
+        const auto ruleLength = 70.0f * scale;
+
+        g.setColour (theme::colours::textDim.withAlpha (0.4f));
+
+        for (int side = 0; side < 2; ++side)
+        {
+            const auto x1 = plate.getCentreX() + (side == 0 ? -gap : gap);
+            g.drawLine (x1, y, x1 + (side == 0 ? -ruleLength : ruleLength), y,
+                        juce::jmax (0.8f, 1.2f * scale));
+        }
+    }
+
+    g.setColour (juce::Colours::black.withAlpha (0.8f));
     g.drawRect (bounds, juce::jmax (1.0f, 3.0f * scale));
 }
 
@@ -537,37 +570,74 @@ void DiamondRoomAudioProcessorEditor::drawTitle (juce::Graphics& g, float scale)
                                                (float) getWidth() - 2.0f * railWidth * scale,
                                                (float) getHeight());
 
-    const auto titleArea = juce::Rectangle<float> (plate.getX(), 24.0f * scale,
-                                                   plate.getWidth(), 62.0f * scale);
-    const auto fontHeight = juce::jmax (11.0f, 52.0f * scale);
+    // The badge sits at the top edge, like a stone set into the panel.
+    {
+        const auto d = 50.0f * scale;
+        const auto gem = juce::Rectangle<float> (d, d * 0.92f)
+                             .withCentre ({ plate.getCentreX(), 30.0f * scale });
+
+        for (int pass = 3; pass >= 1; --pass)
+        {
+            g.setColour (theme::colours::accent.withAlpha (0.07f * (float) pass));
+            g.fillEllipse (gem.expanded (d * 0.20f * (float) pass));
+        }
+
+        theme::drawDiamond (g, gem, scale);
+    }
+
+    const auto titleArea = juce::Rectangle<float> (plate.getX(), 60.0f * scale,
+                                                   plate.getWidth(), 58.0f * scale);
+    const auto fontHeight = juce::jmax (11.0f, 46.0f * scale);
 
     juce::Font font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
-                                        fontHeight, juce::Font::bold));
-    font.setExtraKerningFactor (0.14f);
+                                        fontHeight, juce::Font::plain));
+    font.setExtraKerningFactor (0.30f);
 
     const auto textWidth = juce::GlyphArrangement::getStringWidth (font, "DIAMOND ROOM");
 
     g.setFont (font);
-    g.setColour (juce::Colours::white.withAlpha (0.22f));
-    g.drawText ("DIAMOND ROOM", titleArea.translated (0.0f, 2.5f * scale),
+
+    // A soft halo behind the lettering, so it reads as lit rather than printed.
+    g.setColour (theme::colours::accent.withAlpha (0.16f));
+
+    for (const auto offset : { -1.5f, 1.5f })
+        g.drawText ("DIAMOND ROOM", titleArea.translated (offset * scale, 0.0f),
+                    juce::Justification::centred, false);
+
+    g.setColour (theme::colours::textShadow);
+    g.drawText ("DIAMOND ROOM", titleArea.translated (0.0f, 2.0f * scale),
                 juce::Justification::centred, false);
-    g.setColour (theme::colours::text);
+    g.setColour (juce::Colours::white);
     g.drawText ("DIAMOND ROOM", titleArea, juce::Justification::centred, false);
 
-    // Rules either side of the title.
+    // Rules either side of the title, fading out away from the lettering.
     const auto y = titleArea.getCentreY();
     const auto gap = textWidth * 0.5f + 34.0f * scale;
-    const auto ruleLength = 190.0f * scale;
-    const auto thickness = juce::jmax (1.0f, 4.0f * scale);
+    const auto ruleLength = 150.0f * scale;
 
     for (int side = 0; side < 2; ++side)
     {
         const auto x1 = plate.getCentreX() + (side == 0 ? -gap : gap);
         const auto x2 = x1 + (side == 0 ? -ruleLength : ruleLength);
 
-        g.setColour (juce::Colours::white.withAlpha (0.2f));
-        g.drawLine (x1, y + thickness, x2, y + thickness, thickness);
-        g.setColour (theme::colours::engraveDark);
-        g.drawLine (x1, y, x2, y, thickness);
+        juce::ColourGradient rule (theme::colours::text.withAlpha (0.85f), x1, y,
+                                   theme::colours::text.withAlpha (0.0f), x2, y, false);
+        g.setGradientFill (rule);
+        g.drawLine (x1, y, x2, y, juce::jmax (0.9f, 1.6f * scale));
     }
+
+    // Strapline.
+    const auto strapArea = juce::Rectangle<float> (plate.getX(), 116.0f * scale,
+                                                   plate.getWidth(), 26.0f * scale);
+
+    juce::Font strapFont (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
+                                             juce::jmax (7.0f, 18.0f * scale), juce::Font::plain));
+    strapFont.setExtraKerningFactor (0.45f);
+
+    const auto dot = juce::String::fromUTF8 ("\xc2\xb7");
+
+    g.setFont (strapFont);
+    g.setColour (theme::colours::textDim.withAlpha (0.9f));
+    g.drawText ("REFLECT " + dot + " SHAPE " + dot + " SPACE",
+                strapArea, juce::Justification::centred, false);
 }

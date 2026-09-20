@@ -12,49 +12,57 @@ static constexpr int designHeight = 764;
 
 namespace colours
 {
-    const juce::Colour panelBase   { 0xff5f5e5a };
-    const juce::Colour panelDark   { 0xff3a3936 };
-    const juce::Colour railBase    { 0xff565551 };
-    const juce::Colour rust        { 0xff7a5a3c };
-    const juce::Colour rustDark    { 0xff4e3524 };
+    const juce::Colour backdropDeep { 0xff0b0f16 };
+    const juce::Colour backdropMid  { 0xff141b26 };
+    const juce::Colour panelFill    { 0xff19202d };
+    const juce::Colour panelEdge    { 0xff44566e };
 
-    const juce::Colour engraveDark { 0xcc1a1a18 };
-    const juce::Colour engraveLite { 0x40ffffff };
-    const juce::Colour text        { 0xff2a2a27 };
-    const juce::Colour textLight   { 0xffd8d6d0 };
+    const juce::Colour text       { 0xffdae6f5 };
+    const juce::Colour textDim    { 0xff8ba0ba };
+    const juce::Colour textShadow { 0xcc05080d };
 
-    const juce::Colour pointer     { 0xff8dff6b };
-    const juce::Colour pointerGlow { 0x808dff6b };
-    const juce::Colour ledOn       { 0xffff3520 };
-    const juce::Colour ledOff      { 0xff5a201a };
-    const juce::Colour sliderTint  { 0xffe08a2a };
+    const juce::Colour accent     { 0xff6fd3ff };
+    const juce::Colour accentDeep { 0xff2a7fb8 };
+    const juce::Colour pointer    { 0xff8fe0ff };
+    const juce::Colour ledOn      { 0xff5cc8ff };
+    const juce::Colour ledOff     { 0xff17303f };
 }
 
 //==============================================================================
-/** Weathered steel with rust blooms - generated once, then cached. */
-juce::Image createPanelTexture (int width, int height, int seed, float rustAmount);
+/** Faceted crystal, generated once and cached.
 
-/** Brushed aluminium knob body, without the pointer. */
+    `brightness` scales the whole field: the side rails are cut bright, the
+    panel behind the plates is dark enough to read controls against.
+    `shardSize` is the rough width a facet should end up, in pixels, which is
+    what decides how deep the subdivision runs. */
+juce::Image createCrystalTexture (int width, int height, int seed,
+                                  float brightness, float shardSize);
+
+/** Diamond-cut knob body, without the pointer. */
 juce::Image createKnobBody (int diameter, float scale);
 
-/** The ridged metal cap used on every fader. */
+/** The emerald-cut gem used as a fader cap. */
 juce::Image createFaderCap (int width, int height, bool horizontal, float scale);
 
 //==============================================================================
-/** A recessed screw head, drawn straight to the graphics context. */
+/** A recessed screw head. */
 void drawScrew (juce::Graphics& g, juce::Point<float> centre, float radius);
 
-/** Engraved lettering: dark glyphs with a light lower edge. */
+/** Lettering: a dark drop shadow under a light face, for a lit-glass look. */
 void drawEngravedText (juce::Graphics& g, const juce::String& text,
                        juce::Rectangle<float> area, juce::Justification justification,
                        float fontHeight, bool bold, juce::Colour colour = colours::text);
 
-/** Beveled sub-panel plate with screws in the corners. */
+/** Glass plate with a lit edge and screws in the corners. */
 void drawSubPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
                    const juce::Image& texture, float scale);
 
 /** Tick marks around a knob, from 7 o'clock to 5 o'clock. */
 void drawKnobTicks (juce::Graphics& g, juce::Point<float> centre, float radius,
                     int numTicks, float scale);
+
+/** A brilliant-cut gem seen face on, used as the badge and the rail marks. */
+juce::Path makeDiamondPath (juce::Rectangle<float> bounds);
+void drawDiamond (juce::Graphics& g, juce::Rectangle<float> bounds, float scale);
 
 } // namespace dr::theme

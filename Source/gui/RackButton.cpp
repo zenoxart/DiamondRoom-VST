@@ -162,8 +162,8 @@ void RackButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
     g.setColour (juce::Colours::black.withAlpha (0.5f));
     g.fillRoundedRectangle (bounds.expanded (1.5f * scale), corner);
 
-    const auto top = down ? juce::Colour (0xff5c5b56) : juce::Colour (0xff858480);
-    const auto bottom = down ? juce::Colour (0xff3d3c38) : juce::Colour (0xff4d4c48);
+    const auto top = down ? juce::Colour (0xff1b2431) : juce::Colour (0xff2a3547);
+    const auto bottom = down ? juce::Colour (0xff121924) : juce::Colour (0xff18202c);
 
     juce::ColourGradient face (highlighted && enabled ? top.brighter (0.10f) : top,
                                bounds.getX(), bounds.getY(),
@@ -171,7 +171,7 @@ void RackButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
     g.setGradientFill (face);
     g.fillRoundedRectangle (bounds, corner);
 
-    g.setColour (juce::Colours::white.withAlpha (down ? 0.08f : 0.20f));
+    g.setColour (theme::colours::panelEdge.withAlpha (down ? 0.35f : 0.8f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), corner, juce::jmax (0.8f, 1.2f * scale));
     g.setColour (juce::Colours::black.withAlpha (0.55f));
     g.drawRoundedRectangle (bounds.expanded (0.5f), corner, juce::jmax (0.8f, 1.2f * scale));
@@ -181,7 +181,7 @@ void RackButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
     if (down)
         content.translate (0.0f, 0.8f * scale);
 
-    const auto ink = theme::colours::textLight.withAlpha (enabled ? 0.92f : 0.35f);
+    const auto ink = theme::colours::text.withAlpha (enabled ? 0.92f : 0.32f);
 
     if (glyph != Glyph::none)
     {

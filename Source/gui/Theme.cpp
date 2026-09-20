@@ -6,144 +6,142 @@ namespace dr::theme
 namespace
 {
     //==========================================================================
-    /** Value noise with smooth interpolation - the base for every texture. */
-    struct ValueNoise
+    struct Facet
     {
-        explicit ValueNoise (int seed) : random (seed)
+        juce::Point<float> a, b, c;
+
+        juce::Point<float> centroid() const noexcept
         {
-            for (auto& v : table)
-                v = random.nextFloat();
-
-            for (int i = 0; i < tableSize; ++i)
-                permutation[i] = i;
-
-            for (int i = tableSize - 1; i > 0; --i)
-                std::swap (permutation[i], permutation[random.nextInt (i + 1)]);
+            return { (a.x + b.x + c.x) / 3.0f, (a.y + b.y + c.y) / 3.0f };
         }
-
-        float at (float x, float y) const noexcept
-        {
-            const auto xi = (int) std::floor (x);
-            const auto yi = (int) std::floor (y);
-            const auto tx = x - (float) xi;
-            const auto ty = y - (float) yi;
-
-            const auto sx = tx * tx * (3.0f - 2.0f * tx);
-            const auto sy = ty * ty * (3.0f - 2.0f * ty);
-
-            const auto c00 = valueAt (xi,     yi);
-            const auto c10 = valueAt (xi + 1, yi);
-            const auto c01 = valueAt (xi,     yi + 1);
-            const auto c11 = valueAt (xi + 1, yi + 1);
-
-            const auto a = c00 + sx * (c10 - c00);
-            const auto b = c01 + sx * (c11 - c01);
-            return a + sy * (b - a);
-        }
-
-        /** Fractal sum - several octaves of the above. */
-        float fbm (float x, float y, int octaves) const noexcept
-        {
-            float sum = 0.0f, amplitude = 1.0f, norm = 0.0f, frequency = 1.0f;
-
-            for (int i = 0; i < octaves; ++i)
-            {
-                sum += amplitude * at (x * frequency, y * frequency);
-                norm += amplitude;
-                amplitude *= 0.5f;
-                frequency *= 2.0f;
-            }
-
-            return sum / juce::jmax (1.0e-6f, norm);
-        }
-
-    private:
-        static constexpr int tableSize = 256;
-        static constexpr int mask = tableSize - 1;
-
-        float valueAt (int x, int y) const noexcept
-        {
-            const auto i = permutation[(size_t) (x & mask)];
-            const auto j = permutation[(size_t) ((y + i) & mask)];
-            return table[(size_t) j];
-        }
-
-        juce::Random random;
-        std::array<float, tableSize> table {};
-        std::array<int, tableSize> permutation {};
     };
 
-    inline juce::uint8 toByte (float v) noexcept
+    /**
+        Splits a triangle across its longest edge, over and over, which is what
+        gives the low-poly shards their mix of sizes without any of them growing
+        needle thin.
+    */
+    void subdivide (std::vector<Facet>& out, const Facet& facet, int depth, juce::Random& random)
     {
-        return (juce::uint8) juce::jlimit (0, 255, juce::roundToInt (v * 255.0f));
+        if (depth <= 0)
+        {
+            out.push_back (facet);
+            return;
+        }
+
+        const auto ab = facet.a.getDistanceFrom (facet.b);
+        const auto bc = facet.b.getDistanceFrom (facet.c);
+        const auto ca = facet.c.getDistanceFrom (facet.a);
+
+        juce::Point<float> p, q, apex;
+
+        if (ab >= bc && ab >= ca)      { p = facet.a; q = facet.b; apex = facet.c; }
+        else if (bc >= ca)             { p = facet.b; q = facet.c; apex = facet.a; }
+        else                           { p = facet.c; q = facet.a; apex = facet.b; }
+
+        const auto t = 0.36f + 0.28f * random.nextFloat();
+        const juce::Point<float> split { p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t };
+
+        subdivide (out, { p, split, apex }, depth - 1, random);
+        subdivide (out, { split, q, apex }, depth - 1, random);
+    }
+
+    std::vector<Facet> buildFacets (juce::Rectangle<float> area, int depth, juce::Random& random)
+    {
+        std::vector<Facet> facets;
+        facets.reserve ((size_t) 2u << juce::jmin (depth, 20));
+
+        const auto tl = area.getTopLeft();
+        const auto tr = area.getTopRight();
+        const auto bl = area.getBottomLeft();
+        const auto br = area.getBottomRight();
+
+        subdivide (facets, { tl, tr, br }, depth, random);
+        subdivide (facets, { tl, br, bl }, depth, random);
+        return facets;
     }
 }
 
 //==============================================================================
-juce::Image createPanelTexture (int width, int height, int seed, float rustAmount)
+juce::Image createCrystalTexture (int width, int height, int seed,
+                                  float brightness, float shardSize)
 {
-    juce::Image image (juce::Image::ARGB, juce::jmax (1, width), juce::jmax (1, height), false);
-    juce::Image::BitmapData data (image, juce::Image::BitmapData::writeOnly);
+    const auto w = juce::jmax (1, width);
+    const auto h = juce::jmax (1, height);
 
-    const ValueNoise coarse (seed);
-    const ValueNoise rustNoise (seed * 7919 + 13);
-    const ValueNoise grain (seed * 104729 + 7);
+    juce::Image image (juce::Image::ARGB, w, h, false);
+    juce::Graphics g (image);
 
-    const auto w = (float) width;
-    const auto h = (float) height;
+    const auto area = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h);
 
-    for (int y = 0; y < height; ++y)
+    // Base wash, dark at the bottom so the panel sits heavier than it lights.
     {
-        auto* line = data.getLinePointer (y);
-        const auto fy = (float) y / h;
+        juce::ColourGradient base (colours::backdropMid, area.getCentreX(), 0.0f,
+                                   colours::backdropDeep, area.getCentreX(), area.getBottom(), false);
+        g.setGradientFill (base);
+        g.fillRect (area);
+    }
 
-        for (int x = 0; x < width; ++x)
-        {
-            const auto fx = (float) x / w;
+    juce::Random random (seed);
 
-            // Large scale mottling of the steel itself.
-            const auto blotch = coarse.fbm (fx * 7.0f, fy * 5.0f, 5);
+    // Cut until the average facet is about the requested size. Deriving the
+    // depth from the area rather than from a fixed number keeps the shards the
+    // same size on a narrow rail as on the full width of the panel.
+    const auto target = juce::jmax (8.0f, shardSize);
+    const auto wanted = area.getWidth() * area.getHeight() / (2.0f * target * target);
+    const auto depth = juce::jlimit (2, 12, (int) std::round (std::log2 (juce::jmax (1.0f, wanted))));
 
-            // Brushed streaks running along the panel.
-            const auto streak = grain.at (fx * 900.0f, fy * 22.0f) - 0.5f;
+    const auto facets = buildFacets (area, depth, random);
 
-            // Fine grain, so the surface never looks flat.
-            const auto speck = grain.at (fx * w * 0.9f, fy * h * 0.9f) - 0.5f;
+    for (const auto& facet : facets)
+    {
+        juce::Path path;
+        path.startNewSubPath (facet.a);
+        path.lineTo (facet.b);
+        path.lineTo (facet.c);
+        path.closeSubPath();
 
-            auto luminance = 0.36f + 0.17f * blotch + 0.035f * streak + 0.045f * speck;
+        // Treat the longest edge as the facet's tilt and light it from the top
+        // left, which is what stops the field looking like random confetti.
+        const auto edge = facet.b - facet.a;
+        const auto angle = std::atan2 (edge.y, edge.x);
+        const auto lit = 0.5f + 0.5f * std::cos (angle * 2.0f - 0.8f);
 
-            // Slight top-to-bottom lighting, plus darker edges.
-            luminance += 0.05f * (1.0f - fy);
-            const auto edge = juce::jmin (juce::jmin (fx, 1.0f - fx) * 12.0f,
-                                          juce::jmin (fy, 1.0f - fy) * 12.0f);
-            luminance *= 0.65f + 0.35f * juce::jlimit (0.0f, 1.0f, edge);
+        const auto centre = facet.centroid();
+        const auto fromEdge = juce::jmin (juce::jmin (centre.x, area.getWidth() - centre.x),
+                                          juce::jmin (centre.y, area.getHeight() - centre.y))
+                                / juce::jmax (1.0f, juce::jmin (area.getWidth(), area.getHeight()) * 0.5f);
 
-            auto r = luminance * 1.03f;
-            auto gr = luminance * 1.00f;
-            auto b = luminance * 0.95f;
+        auto value = (0.06f + 0.94f * lit * lit) * brightness;
+        value *= 0.72f + 0.28f * (1.0f - fromEdge);          // brighter towards the edges
+        value += 0.07f * (random.nextFloat() - 0.5f);
+        value = juce::jlimit (0.0f, 1.0f, value);
 
-            // Rust blooms: patches where the noise crosses a threshold.
-            if (rustAmount > 0.0f)
-            {
-                const auto patch = rustNoise.fbm (fx * 4.5f + 3.1f, fy * 3.5f + 1.7f, 5);
-                const auto detail = rustNoise.fbm (fx * 26.0f, fy * 20.0f, 3);
-                auto corrosion = juce::jlimit (0.0f, 1.0f, (patch - 0.55f) * 4.2f)
-                                   * juce::jlimit (0.0f, 1.0f, (detail - 0.32f) * 2.2f);
+        // Crystal is faintly blue in the shadows and white where it catches.
+        const auto shard = juce::Colour::fromFloatRGBA (
+            juce::jlimit (0.0f, 1.0f, 0.05f + value * 0.98f),
+            juce::jlimit (0.0f, 1.0f, 0.08f + value * 1.00f),
+            juce::jlimit (0.0f, 1.0f, 0.13f + value * 1.02f),
+            1.0f);
 
-                // Corrosion creeps in from the edges, where the plating wears.
-                const auto fromEdge = juce::jmin (juce::jmin (fx, 1.0f - fx),
-                                                  juce::jmin (fy, 1.0f - fy));
-                corrosion *= rustAmount * (0.35f + 0.65f * juce::jlimit (0.0f, 1.0f, 1.0f - fromEdge * 3.2f));
+        juce::ColourGradient grad (shard.brighter (0.16f), facet.a,
+                                   shard.darker (0.34f), facet.c, false);
+        g.setGradientFill (grad);
+        g.fillPath (path);
 
-                const auto rustR = 0.46f * luminance / 0.32f;
-                r  += corrosion * (juce::jlimit (0.0f, 1.0f, rustR * 0.95f) - r);
-                gr += corrosion * (juce::jlimit (0.0f, 1.0f, rustR * 0.55f) - gr);
-                b  += corrosion * (juce::jlimit (0.0f, 1.0f, rustR * 0.32f) - b);
-            }
+        // Hairline along the cut.
+        g.setColour (juce::Colours::white.withAlpha (0.018f + 0.055f * value));
+        g.strokePath (path, juce::PathStrokeType (0.8f));
+    }
 
-            auto* pixel = (juce::PixelARGB*) (line + x * data.pixelStride);
-            pixel->setARGB (255, toByte (r), toByte (gr), toByte (b));
-        }
+    // Settle the darker cuts back down so controls stay legible on top of them.
+    // At full brightness nothing is taken off: that is the showpiece.
+    const auto knockBack = juce::jlimit (0.0f, 0.9f, 0.55f - brightness * 0.55f);
+
+    if (knockBack > 0.0f)
+    {
+        g.setColour (colours::backdropDeep.withAlpha (knockBack));
+        g.fillRect (area);
     }
 
     return image;
@@ -159,92 +157,136 @@ juce::Image createKnobBody (int diameter, float scale)
     g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
 
     const auto full = juce::Rectangle<float> (0.0f, 0.0f, (float) size, (float) size);
-    const auto inset = juce::jmax (1.0f, 2.0f * scale);
-    const auto body = full.reduced (inset);
+    const auto body = full.reduced (juce::jmax (1.0f, 2.0f * scale));
     const auto centre = full.getCentre();
     const auto radius = body.getWidth() * 0.5f;
 
-    // Drop shadow under the rim.
     {
-        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.55f),
-                                 (int) juce::jmax (2.0f, 6.0f * scale),
+        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.7f),
+                                 (int) juce::jmax (2.0f, 8.0f * scale),
                                  { 0, (int) juce::jmax (1.0f, 3.0f * scale) });
         juce::Path circle;
         circle.addEllipse (body);
         shadow.drawForPath (g, circle);
     }
 
-    // Outer chamfer ring.
+    // -- girdle: the ring of cut facets around the rim ----------------------
+    constexpr int numFacets = 24;
+    const auto girdleInner = radius * 0.88f;
+
+    auto litAt = [] (float angle)
     {
-        juce::ColourGradient ring (juce::Colour (0xffe7e7e5), body.getX(), body.getY(),
-                                   juce::Colour (0xff53534f), body.getRight(), body.getBottom(), false);
-        g.setGradientFill (ring);
-        g.fillEllipse (body);
+        // Lit from above: facets facing up catch, the lower ones fall away.
+        return 0.5f + 0.5f * std::cos (angle + juce::MathConstants<float>::halfPi);
+    };
+
+    auto silver = [] (float lit)
+    {
+        const auto tone = juce::jlimit (0.0f, 1.0f, 0.62f + 0.34f * lit * lit);
+        return juce::Colour::fromFloatRGBA (tone * 0.96f, tone * 0.98f, tone, 1.0f);
+    };
+
+    // Two triangles per step, one pointing in and one pointing out, so the ring
+    // is tiled without gaps. A single triangle per step leaves wedges of
+    // background showing between them, which reads as a row of teeth.
+    for (int i = 0; i < numFacets; ++i)
+    {
+        const auto a0 = juce::MathConstants<float>::twoPi * (float) i / (float) numFacets;
+        const auto a1 = juce::MathConstants<float>::twoPi * (float) (i + 1) / (float) numFacets;
+        const auto mid0 = (a0 + a1) * 0.5f;
+        const auto mid1 = mid0 + juce::MathConstants<float>::twoPi / (float) numFacets;
+
+        auto rim = [&] (float angle)
+        {
+            return juce::Point<float> (centre.x + std::cos (angle) * radius,
+                                       centre.y + std::sin (angle) * radius);
+        };
+
+        auto inner = [&] (float angle)
+        {
+            return juce::Point<float> (centre.x + std::cos (angle) * girdleInner,
+                                       centre.y + std::sin (angle) * girdleInner);
+        };
+
+        juce::Path crown;
+        crown.startNewSubPath (rim (a0));
+        crown.lineTo (rim (a1));
+        crown.lineTo (inner (mid0));
+        crown.closeSubPath();
+
+        juce::Path pavilion;
+        pavilion.startNewSubPath (inner (mid0));
+        pavilion.lineTo (rim (a1));
+        pavilion.lineTo (inner (mid1));
+        pavilion.closeSubPath();
+
+        g.setColour (silver (litAt (mid0)));
+        g.fillPath (crown);
+
+        g.setColour (silver (litAt (a1)).darker (0.10f));
+        g.fillPath (pavilion);
+
+        g.setColour (juce::Colours::white.withAlpha (0.12f + 0.20f * litAt (mid0)));
+        g.strokePath (crown, juce::PathStrokeType (juce::jmax (0.4f, 0.7f * scale)));
     }
 
-    // Main face, lit from the upper left.
-    const auto face = body.reduced (juce::jmax (1.0f, 3.0f * scale));
+    // -- table: the brushed silver face -------------------------------------
+    const auto face = juce::Rectangle<float> (girdleInner * 2.0f, girdleInner * 2.0f)
+                          .withCentre (centre);
     {
-        juce::ColourGradient grad (juce::Colour (0xfff2f2f0),
-                                   face.getX() + face.getWidth() * 0.18f,
-                                   face.getY() + face.getHeight() * 0.10f,
-                                   juce::Colour (0xff8e8e8a),
+        juce::ColourGradient grad (juce::Colour (0xfff4f8fc),
+                                   face.getX() + face.getWidth() * 0.26f,
+                                   face.getY() + face.getHeight() * 0.18f,
+                                   juce::Colour (0xff6d7a8c),
                                    face.getRight(), face.getBottom(), true);
-        grad.addColour (0.55, juce::Colour (0xffc9c9c5));
+        grad.addColour (0.55, juce::Colour (0xffb9c4d2));
         g.setGradientFill (grad);
         g.fillEllipse (face);
     }
 
-    // The diagonal split that gives these knobs their machined look: the
-    // lower right half sits in shadow behind a hard edge.
-    {
-        juce::Path lower;
-        lower.startNewSubPath (face.getX() - 1.0f, face.getBottom() + 1.0f);
-        lower.lineTo (face.getRight() + 1.0f, face.getY() - 1.0f);
-        lower.lineTo (face.getRight() + 1.0f, face.getBottom() + 1.0f);
-        lower.closeSubPath();
-
-        juce::Graphics::ScopedSaveState save (g);
-        juce::Path clip;
-        clip.addEllipse (face);
-        g.reduceClipRegion (clip);
-
-        juce::ColourGradient grad (juce::Colour (0x00000000),
-                                   face.getCentreX(), face.getCentreY(),
-                                   juce::Colour (0x59000000),
-                                   face.getRight(), face.getBottom(), false);
-        g.setGradientFill (grad);
-        g.fillPath (lower);
-
-        // Bright catch-light along the split.
-        g.setColour (juce::Colours::white.withAlpha (0.28f));
-        g.drawLine (face.getX(), face.getBottom(), face.getRight(), face.getY(),
-                    juce::jmax (1.0f, 1.6f * scale));
-    }
-
-    // Concentric brushing.
+    // Radial brushing, which is what separates the table from the girdle.
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;
         clip.addEllipse (face);
         g.reduceClipRegion (clip);
 
-        juce::Random random (0x5eed11);
-        for (float r = radius; r > 2.0f; r -= juce::jmax (0.8f, 1.4f * scale))
+        juce::Random random (0x6d1a3);
+        constexpr int strokes = 160;
+
+        for (int i = 0; i < strokes; ++i)
         {
-            const auto alpha = 0.02f + 0.045f * random.nextFloat();
+            const auto angle = juce::MathConstants<float>::twoPi * (float) i / (float) strokes;
+            const auto alpha = 0.012f + 0.030f * random.nextFloat();
+
             g.setColour ((random.nextBool() ? juce::Colours::white : juce::Colours::black)
                              .withAlpha (alpha));
-            g.drawEllipse (centre.x - r, centre.y - r, r * 2.0f, r * 2.0f,
-                           juce::jmax (0.6f, 0.9f * scale));
+            g.drawLine (centre.x, centre.y,
+                        centre.x + std::cos (angle) * girdleInner,
+                        centre.y + std::sin (angle) * girdleInner,
+                        juce::jmax (0.6f, 1.1f * scale));
         }
     }
 
-    // Rim highlight and contact shadow.
-    g.setColour (juce::Colours::white.withAlpha (0.30f));
-    g.drawEllipse (face.reduced (0.5f), juce::jmax (0.7f, 1.1f * scale));
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
-    g.drawEllipse (body.reduced (0.5f), juce::jmax (0.7f, 1.2f * scale));
+    // Catch-light across the upper left of the table.
+    {
+        juce::Graphics::ScopedSaveState save (g);
+        juce::Path clip;
+        clip.addEllipse (face);
+        g.reduceClipRegion (clip);
+
+        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.42f),
+                                    face.getX(), face.getY(),
+                                    juce::Colours::white.withAlpha (0.0f),
+                                    face.getCentreX(), face.getCentreY(), false);
+        g.setGradientFill (sheen);
+        g.fillEllipse (face);
+    }
+
+    g.setColour (juce::Colours::white.withAlpha (0.26f));
+    g.drawEllipse (face.reduced (0.5f), juce::jmax (0.6f, 1.0f * scale));
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.drawEllipse (body.reduced (0.5f), juce::jmax (0.7f, 1.1f * scale));
 
     return image;
 }
@@ -252,6 +294,8 @@ juce::Image createKnobBody (int diameter, float scale)
 //==============================================================================
 juce::Image createFaderCap (int width, int height, bool horizontal, float scale)
 {
+    juce::ignoreUnused (horizontal);
+
     const auto w = juce::jmax (6, width);
     const auto h = juce::jmax (6, height);
     juce::Image image (juce::Image::ARGB, w, h, true);
@@ -259,82 +303,55 @@ juce::Image createFaderCap (int width, int height, bool horizontal, float scale)
     juce::Graphics g (image);
     const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h)
                             .reduced (juce::jmax (1.0f, 2.0f * scale));
-    const auto corner = juce::jmax (1.5f, 3.0f * scale);
 
+    // Emerald cut: a rectangle with the corners taken off.
+    const auto chamfer = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.22f;
+
+    auto cutRectangle = [chamfer] (juce::Rectangle<float> r)
     {
-        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.6f),
-                                 (int) juce::jmax (2.0f, 5.0f * scale),
-                                 { 0, (int) juce::jmax (1.0f, 2.0f * scale) });
         juce::Path p;
-        p.addRoundedRectangle (bounds, corner);
-        shadow.drawForPath (g, p);
+        p.startNewSubPath (r.getX() + chamfer, r.getY());
+        p.lineTo (r.getRight() - chamfer, r.getY());
+        p.lineTo (r.getRight(), r.getY() + chamfer);
+        p.lineTo (r.getRight(), r.getBottom() - chamfer);
+        p.lineTo (r.getRight() - chamfer, r.getBottom());
+        p.lineTo (r.getX() + chamfer, r.getBottom());
+        p.lineTo (r.getX(), r.getBottom() - chamfer);
+        p.lineTo (r.getX(), r.getY() + chamfer);
+        p.closeSubPath();
+        return p;
+    };
+
+    const auto outline = cutRectangle (bounds);
+
+    {
+        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.75f),
+                                 (int) juce::jmax (2.0f, 6.0f * scale),
+                                 { 0, (int) juce::jmax (1.0f, 2.0f * scale) });
+        shadow.drawForPath (g, const_cast<juce::Path&> (outline));
     }
 
-    juce::ColourGradient grad (juce::Colour (0xfff4f4f2), bounds.getX(), bounds.getY(),
-                               juce::Colour (0xff6e6e6a), bounds.getRight(), bounds.getBottom(), false);
-    grad.addColour (0.45, juce::Colour (0xffcfcfcb));
-    grad.addColour (0.52, juce::Colour (0xff9a9a96));
+    juce::ColourGradient grad (juce::Colour (0xffeaf6ff), bounds.getX(), bounds.getY(),
+                               juce::Colour (0xff6f8496), bounds.getRight(), bounds.getBottom(), false);
+    grad.addColour (0.45, juce::Colour (0xffc6dcee));
+    grad.addColour (0.62, juce::Colour (0xff92a7bb));
     g.setGradientFill (grad);
-    g.fillRoundedRectangle (bounds, corner);
+    g.fillPath (outline);
 
-    // Machined groove across the middle, and the orange indicator pips.
-    const auto centreLine = horizontal ? bounds.getCentreX() : bounds.getCentreY();
+    // Inner table, and the step down to it, which is what reads as a cut stone.
+    const auto table = bounds.reduced (juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.20f);
+    const auto tablePath = cutRectangle (table);
 
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
-    if (horizontal)
-        g.fillRect (juce::Rectangle<float> (centreLine - 1.0f * scale, bounds.getY() + 2.0f * scale,
-                                            juce::jmax (1.0f, 2.0f * scale), bounds.getHeight() - 4.0f * scale));
-    else
-        g.fillRect (juce::Rectangle<float> (bounds.getX() + 2.0f * scale, centreLine - 1.0f * scale,
-                                            bounds.getWidth() - 4.0f * scale, juce::jmax (1.0f, 2.0f * scale)));
+    juce::ColourGradient inner (juce::Colour (0xffd8ecfb), table.getX(), table.getBottom(),
+                                juce::Colour (0xfff6fbff), table.getRight(), table.getY(), false);
+    g.setGradientFill (inner);
+    g.fillPath (tablePath);
 
-    g.setColour (colours::sliderTint.withAlpha (0.9f));
-    const auto pip = juce::jmax (1.2f, 2.2f * scale);
-    if (horizontal)
-    {
-        g.fillEllipse (centreLine - pip, bounds.getY() + 3.0f * scale, pip * 2.0f, pip * 2.0f);
-        g.fillEllipse (centreLine - pip, bounds.getBottom() - 3.0f * scale - pip * 2.0f, pip * 2.0f, pip * 2.0f);
-    }
-    else
-    {
-        g.fillEllipse (bounds.getX() + 3.0f * scale, centreLine - pip, pip * 2.0f, pip * 2.0f);
-        g.fillEllipse (bounds.getRight() - 3.0f * scale - pip * 2.0f, centreLine - pip, pip * 2.0f, pip * 2.0f);
-    }
+    g.setColour (colours::accent.withAlpha (0.35f));
+    g.strokePath (tablePath, juce::PathStrokeType (juce::jmax (0.5f, 0.9f * scale)));
 
-    // Fine machined ridges across the grip.
-    {
-        juce::Graphics::ScopedSaveState save (g);
-        juce::Path clip;
-        clip.addRoundedRectangle (bounds, corner);
-        g.reduceClipRegion (clip);
-
-        const auto span = horizontal ? bounds.getWidth() : bounds.getHeight();
-        const auto step = juce::jmax (2.0f, 5.0f * scale);
-
-        for (float offset = step; offset < span - step * 0.5f; offset += step)
-        {
-            g.setColour (juce::Colours::black.withAlpha (0.16f));
-            if (horizontal)
-                g.drawLine (bounds.getX() + offset, bounds.getY(),
-                            bounds.getX() + offset, bounds.getBottom(), juce::jmax (0.6f, 0.9f * scale));
-            else
-                g.drawLine (bounds.getX(), bounds.getY() + offset,
-                            bounds.getRight(), bounds.getY() + offset, juce::jmax (0.6f, 0.9f * scale));
-
-            g.setColour (juce::Colours::white.withAlpha (0.16f));
-            if (horizontal)
-                g.drawLine (bounds.getX() + offset + scale, bounds.getY(),
-                            bounds.getX() + offset + scale, bounds.getBottom(), juce::jmax (0.5f, 0.7f * scale));
-            else
-                g.drawLine (bounds.getX(), bounds.getY() + offset + scale,
-                            bounds.getRight(), bounds.getY() + offset + scale, juce::jmax (0.5f, 0.7f * scale));
-        }
-    }
-
-    g.setColour (juce::Colours::white.withAlpha (0.35f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), corner, juce::jmax (0.7f, 1.0f * scale));
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.drawRoundedRectangle (bounds.expanded (0.5f), corner, juce::jmax (0.7f, 1.0f * scale));
+    g.setColour (juce::Colours::white.withAlpha (0.55f));
+    g.strokePath (outline, juce::PathStrokeType (juce::jmax (0.6f, 1.0f * scale)));
 
     return image;
 }
@@ -345,27 +362,21 @@ void drawScrew (juce::Graphics& g, juce::Point<float> centre, float radius)
     const auto bounds = juce::Rectangle<float> (centre.x - radius, centre.y - radius,
                                                 radius * 2.0f, radius * 2.0f);
 
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
-    g.fillEllipse (bounds.translated (0.0f, radius * 0.18f));
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.fillEllipse (bounds.expanded (radius * 0.16f));
 
-    juce::ColourGradient grad (juce::Colour (0xffb9b8b3), bounds.getX(), bounds.getY(),
-                               juce::Colour (0xff4a4945), bounds.getRight(), bounds.getBottom(), false);
+    juce::ColourGradient grad (juce::Colour (0xff8e9fb4), bounds.getX(), bounds.getY(),
+                               juce::Colour (0xff2b3543), bounds.getRight(), bounds.getBottom(), false);
     g.setGradientFill (grad);
     g.fillEllipse (bounds);
 
-    g.setColour (juce::Colours::black.withAlpha (0.55f));
-    g.drawEllipse (bounds.reduced (radius * 0.12f), juce::jmax (0.6f, radius * 0.12f));
-
-    // Cross slot.
-    const auto slot = radius * 0.62f;
-    g.setColour (juce::Colours::black.withAlpha (0.7f));
-    g.drawLine (centre.x - slot, centre.y - slot * 0.45f,
-                centre.x + slot, centre.y + slot * 0.45f, juce::jmax (0.8f, radius * 0.22f));
-
     g.setColour (juce::Colours::white.withAlpha (0.22f));
-    g.drawLine (centre.x - slot, centre.y - slot * 0.45f + radius * 0.16f,
-                centre.x + slot, centre.y + slot * 0.45f + radius * 0.16f,
-                juce::jmax (0.6f, radius * 0.12f));
+    g.drawEllipse (bounds.reduced (radius * 0.1f), juce::jmax (0.5f, radius * 0.14f));
+
+    const auto slot = radius * 0.6f;
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.drawLine (centre.x - slot, centre.y - slot * 0.4f,
+                centre.x + slot, centre.y + slot * 0.4f, juce::jmax (0.7f, radius * 0.2f));
 }
 
 //==============================================================================
@@ -377,13 +388,13 @@ void drawEngravedText (juce::Graphics& g, const juce::String& text,
     {
         juce::Font f (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
                                          height, bold ? juce::Font::bold : juce::Font::plain));
-        f.setExtraKerningFactor (0.08f);
+        f.setExtraKerningFactor (0.10f);
         return f;
     };
 
     auto font = makeFont (fontHeight);
 
-    // Engraved lettering is cut to fit the plate, so shrink rather than clip.
+    // Lettering is cut to fit the plate, so shrink rather than clip.
     const auto available = area.getWidth();
     const auto needed = juce::GlyphArrangement::getStringWidth (font, text);
 
@@ -392,8 +403,8 @@ void drawEngravedText (juce::Graphics& g, const juce::String& text,
 
     g.setFont (font);
 
-    g.setColour (juce::Colours::white.withAlpha (0.22f));
-    g.drawText (text, area.translated (0.0f, juce::jmax (1.0f, fontHeight * 0.055f)),
+    g.setColour (colours::textShadow);
+    g.drawText (text, area.translated (0.0f, juce::jmax (1.0f, fontHeight * 0.06f)),
                 justification, false);
 
     g.setColour (colour);
@@ -404,11 +415,10 @@ void drawEngravedText (juce::Graphics& g, const juce::String& text,
 void drawSubPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
                    const juce::Image& texture, float scale)
 {
-    const auto corner = juce::jmax (2.0f, 6.0f * scale);
+    const auto corner = juce::jmax (2.0f, 8.0f * scale);
 
-    // Recess behind the plate.
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.fillRoundedRectangle (bounds.expanded (2.0f * scale), corner);
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.fillRoundedRectangle (bounds.translated (0.0f, 2.0f * scale), corner);
 
     {
         juce::Graphics::ScopedSaveState save (g);
@@ -417,30 +427,35 @@ void drawSubPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
         g.reduceClipRegion (clip);
 
         if (texture.isValid())
-            g.drawImage (texture, bounds.expanded (0.0f), juce::RectanglePlacement::stretchToFit);
+            g.drawImage (texture, bounds, juce::RectanglePlacement::stretchToFit);
         else
-            g.fillAll (colours::panelBase);
+            g.fillAll (colours::panelFill);
 
-        // Plate lighting: brighter at the top edge, shaded at the bottom.
-        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.10f),
+        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.055f),
                                     bounds.getCentreX(), bounds.getY(),
-                                    juce::Colours::black.withAlpha (0.18f),
+                                    juce::Colours::black.withAlpha (0.30f),
                                     bounds.getCentreX(), bounds.getBottom(), false);
         g.setGradientFill (sheen);
         g.fillRect (bounds);
     }
 
-    // Bevelled edge.
-    g.setColour (juce::Colours::white.withAlpha (0.20f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f * scale), corner, juce::jmax (0.8f, 1.4f * scale));
-    g.setColour (juce::Colours::black.withAlpha (0.55f));
-    g.drawRoundedRectangle (bounds.expanded (1.2f * scale), corner, juce::jmax (0.8f, 1.6f * scale));
+    // Lit edge: brighter along the top, fading down the sides.
+    {
+        juce::ColourGradient edge (colours::panelEdge.withAlpha (0.95f),
+                                   bounds.getCentreX(), bounds.getY(),
+                                   colours::panelEdge.withAlpha (0.28f),
+                                   bounds.getCentreX(), bounds.getBottom(), false);
+        g.setGradientFill (edge);
+        g.drawRoundedRectangle (bounds.reduced (0.5f * scale), corner, juce::jmax (0.9f, 1.5f * scale));
+    }
 
-    // Screws in the corners.
-    const auto inset = 14.0f * scale;
-    const auto r = 7.0f * scale;
-    drawScrew (g, { bounds.getX() + inset,     bounds.getY() + inset },     r);
-    drawScrew (g, { bounds.getRight() - inset, bounds.getY() + inset },     r);
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.drawRoundedRectangle (bounds.expanded (1.4f * scale), corner, juce::jmax (0.8f, 1.4f * scale));
+
+    const auto inset = 15.0f * scale;
+    const auto r = 6.0f * scale;
+    drawScrew (g, { bounds.getX() + inset,     bounds.getY() + inset },      r);
+    drawScrew (g, { bounds.getRight() - inset, bounds.getY() + inset },      r);
     drawScrew (g, { bounds.getX() + inset,     bounds.getBottom() - inset }, r);
     drawScrew (g, { bounds.getRight() - inset, bounds.getBottom() - inset }, r);
 }
@@ -452,23 +467,73 @@ void drawKnobTicks (juce::Graphics& g, juce::Point<float> centre, float radius,
     constexpr auto startAngle = juce::MathConstants<float>::pi * 1.25f;
     constexpr auto endAngle   = juce::MathConstants<float>::pi * 2.75f;
 
-    g.setColour (colours::engraveDark.withAlpha (0.75f));
-
     for (int i = 0; i < numTicks; ++i)
     {
         const auto t = (float) i / (float) (numTicks - 1);
         const auto angle = startAngle + t * (endAngle - startAngle);
         const auto major = (i == 0 || i == numTicks - 1 || (i % 2) == 0);
-        const auto length = radius * (major ? 0.17f : 0.11f);
+        const auto length = radius * (major ? 0.20f : 0.12f);
 
         const auto sinA = std::sin (angle), cosA = std::cos (angle);
-        const auto inner = radius;
-        const auto outer = radius + length;
 
-        g.drawLine (centre.x + sinA * inner, centre.y - cosA * inner,
-                    centre.x + sinA * outer, centre.y - cosA * outer,
-                    juce::jmax (1.0f, (major ? 2.6f : 2.0f) * scale));
+        g.setColour (colours::text.withAlpha (major ? 0.78f : 0.42f));
+        g.drawLine (centre.x + sinA * radius, centre.y - cosA * radius,
+                    centre.x + sinA * (radius + length), centre.y - cosA * (radius + length),
+                    juce::jmax (0.9f, (major ? 2.2f : 1.6f) * scale));
     }
+}
+
+//==============================================================================
+juce::Path makeDiamondPath (juce::Rectangle<float> bounds)
+{
+    const auto x = bounds.getX(), y = bounds.getY();
+    const auto w = bounds.getWidth(), h = bounds.getHeight();
+
+    // Brilliant cut seen face on: a wide crown over a tapered pavilion.
+    const auto crownY = y + h * 0.34f;
+
+    juce::Path p;
+    p.startNewSubPath (x + w * 0.18f, y);
+    p.lineTo (x + w * 0.82f, y);
+    p.lineTo (x + w, crownY);
+    p.lineTo (x + w * 0.5f, y + h);
+    p.lineTo (x, crownY);
+    p.closeSubPath();
+    return p;
+}
+
+void drawDiamond (juce::Graphics& g, juce::Rectangle<float> bounds, float scale)
+{
+    const auto outline = makeDiamondPath (bounds);
+    const auto x = bounds.getX(), y = bounds.getY();
+    const auto w = bounds.getWidth(), h = bounds.getHeight();
+    const auto crownY = y + h * 0.34f;
+
+    {
+        juce::ColourGradient grad (juce::Colour (0xffeaf7ff), bounds.getX(), bounds.getY(),
+                                   colours::accentDeep, bounds.getRight(), bounds.getBottom(), false);
+        g.setGradientFill (grad);
+        g.fillPath (outline);
+    }
+
+    // The internal cuts: crown table plus the pavilion facets.
+    juce::Path cuts;
+    cuts.startNewSubPath (x, crownY);
+    cuts.lineTo (x + w, crownY);
+    cuts.startNewSubPath (x + w * 0.18f, y);
+    cuts.lineTo (x + w * 0.32f, crownY);
+    cuts.lineTo (x + w * 0.5f, y + h);
+    cuts.startNewSubPath (x + w * 0.82f, y);
+    cuts.lineTo (x + w * 0.68f, crownY);
+    cuts.lineTo (x + w * 0.5f, y + h);
+    cuts.startNewSubPath (x + w * 0.32f, crownY);
+    cuts.lineTo (x + w * 0.68f, crownY);
+
+    g.setColour (juce::Colours::white.withAlpha (0.55f));
+    g.strokePath (cuts, juce::PathStrokeType (juce::jmax (0.6f, 1.0f * scale)));
+
+    g.setColour (juce::Colours::white.withAlpha (0.8f));
+    g.strokePath (outline, juce::PathStrokeType (juce::jmax (0.7f, 1.2f * scale)));
 }
 
 } // namespace dr::theme

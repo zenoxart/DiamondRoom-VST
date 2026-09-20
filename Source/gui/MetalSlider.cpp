@@ -8,7 +8,8 @@ namespace
     // Design units.
     constexpr float captionRow      = 34.0f;
     constexpr float figureRow       = 26.0f;
-    constexpr float trackThickness  = 13.0f;
+    constexpr float trackThickness  = 8.0f;
+    constexpr float masterTrackThickness = 13.0f;
     constexpr float capLongSide     = 62.0f;
     constexpr float capShortSide    = 48.0f;
 
@@ -117,7 +118,7 @@ void MetalSlider::paint (juce::Graphics& g)
 
     // -- graduations -------------------------------------------------------
     {
-        g.setColour (theme::colours::engraveDark.withAlpha (0.7f));
+        g.setColour (theme::colours::text.withAlpha (0.55f));
         const auto tickThickness = juce::jmax (1.0f, 2.2f * scale);
 
         // Graduations run out towards the edges of the plate, so they stay in
@@ -152,25 +153,42 @@ void MetalSlider::paint (juce::Graphics& g)
 
     // -- recessed track ----------------------------------------------------
     {
-        const auto thickness = trackThickness * scale;
+        const auto thickness = (horizontal ? masterTrackThickness : trackThickness) * scale;
         const auto slot = horizontal
                               ? juce::Rectangle<float> (track.getX(), track.getCentreY() - thickness * 0.5f,
                                                         track.getWidth(), thickness)
                               : juce::Rectangle<float> (track.getCentreX() - thickness * 0.5f, track.getY(),
                                                         thickness, track.getHeight());
 
-        const auto corner = thickness * 0.4f;
+        const auto corner = thickness * 0.45f;
 
-        g.setColour (juce::Colours::white.withAlpha (0.16f));
+        g.setColour (theme::colours::panelEdge.withAlpha (0.22f));
         g.fillRoundedRectangle (slot.translated (0.0f, juce::jmax (1.0f, 1.5f * scale)), corner);
 
-        juce::ColourGradient grad (juce::Colour (0xff141412),
+        juce::ColourGradient grad (juce::Colour (0xff05080d),
                                    slot.getX(), slot.getY(),
-                                   juce::Colour (0xff36352f),
+                                   juce::Colour (0xff1b2531),
                                    horizontal ? slot.getX() : slot.getRight(),
                                    horizontal ? slot.getBottom() : slot.getY(), false);
         g.setGradientFill (grad);
         g.fillRoundedRectangle (slot, corner);
+
+        // The master fader reads as a lit filament running the width of the
+        // panel; the section faders stay dark so they do not compete with it.
+        if (horizontal)
+        {
+            const auto filament = slot.withSizeKeepingCentre (slot.getWidth(), thickness * 0.34f);
+
+            for (int pass = 3; pass >= 1; --pass)
+            {
+                g.setColour (theme::colours::accent.withAlpha (0.10f * (float) pass));
+                g.fillRoundedRectangle (filament.expanded (0.0f, thickness * 0.30f * (float) pass),
+                                        corner);
+            }
+
+            g.setColour (theme::colours::accent.withAlpha (0.85f));
+            g.fillRoundedRectangle (filament, filament.getHeight() * 0.5f);
+        }
     }
 
     // -- cap ---------------------------------------------------------------
@@ -195,7 +213,7 @@ void MetalSlider::paint (juce::Graphics& g)
 
     // Fader captions are the longest lettering on the panel, so they are cut a
     // size down from the knob captions to keep neighbouring plates legible.
-    const auto captionHeight = juce::jmax (7.0f, (horizontal ? 25.0f : 21.0f) * scale);
+    const auto captionHeight = juce::jmax (6.0f, (horizontal ? 25.0f : 16.0f) * scale);
     const auto figureHeight = juce::jmax (7.0f, 21.0f * scale);
 
     if (horizontal)
@@ -219,7 +237,7 @@ void MetalSlider::paint (juce::Graphics& g)
     else
     {
         theme::drawEngravedText (g, caption.toUpperCase(),
-                                 area.removeFromBottom (captionRow * scale).reduced (14.0f * scale, 0.0f),
+                                 area.removeFromBottom (captionRow * scale).reduced (26.0f * scale, 0.0f),
                                  juce::Justification::centredTop, captionHeight, true);
     }
 }

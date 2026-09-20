@@ -27,8 +27,8 @@ void LedButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 
     // Chrome bezel.
     {
-        juce::ColourGradient bezel (juce::Colour (0xffbdbcb7), lens.getX(), lens.getY(),
-                                    juce::Colour (0xff3d3c39), lens.getRight(), lens.getBottom(), false);
+        juce::ColourGradient bezel (juce::Colour (0xff5d6b7e), lens.getX(), lens.getY(),
+                                    juce::Colour (0xff10161f), lens.getRight(), lens.getBottom(), false);
         g.setGradientFill (bezel);
         g.fillEllipse (lens);
     }
@@ -38,8 +38,8 @@ void LedButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
     if (on)
     {
         // Halo around a lit lamp.
-        const auto halo = lens.expanded (diameter * 0.30f);
-        juce::ColourGradient glow (theme::colours::ledOn.withAlpha (0.55f),
+        const auto halo = lens.expanded (diameter * 0.55f);
+        juce::ColourGradient glow (theme::colours::ledOn.withAlpha (0.70f),
                                    halo.getCentreX(), halo.getCentreY(),
                                    theme::colours::ledOn.withAlpha (0.0f),
                                    halo.getRight(), halo.getCentreY(), true);

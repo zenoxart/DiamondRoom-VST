@@ -95,12 +95,12 @@ void MetalKnob::paint (juce::Graphics& g)
     const juce::Point<float> from { centre.x + sinA * inner, centre.y - cosA * inner };
     const juce::Point<float> to   { centre.x + sinA * outer, centre.y - cosA * outer };
 
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.drawLine ({ from.translated (0.0f, thickness * 0.6f), to.translated (0.0f, thickness * 0.6f) },
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.drawLine ({ from.translated (0.0f, thickness * 0.7f), to.translated (0.0f, thickness * 0.7f) },
                 thickness);
 
-    g.setColour (theme::colours::pointerGlow);
-    g.drawLine ({ from, to }, thickness * 2.1f);
+    g.setColour (theme::colours::accent.withAlpha (0.45f));
+    g.drawLine ({ from, to }, thickness * 2.6f);
 
     g.setColour (theme::colours::pointer);
     g.drawLine ({ from, to }, thickness);
@@ -133,7 +133,7 @@ void MetalKnob::paint (juce::Graphics& g)
     // Keep the caption inside its own column: the component is deliberately
     // wider than the knob, but the plate next door starts right after it.
     theme::drawEngravedText (g, caption.toUpperCase(),
-                             captionArea.reduced (12.0f * scale, 0.0f),
+                             captionArea.reduced (26.0f * scale, 0.0f),
                              juce::Justification::centredTop, captionHeight, true);
 }
 

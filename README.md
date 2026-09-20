@@ -2,7 +2,7 @@
 
 A JUCE/C++ VST3 rebuild of the `DiamondRoom.fst` FL Studio Patcher preset: four
 parallel reverbs fed from a saturation stage, summed through a valve
-compressor, on a single 4U rack panel.
+compressor, on a single 4U rack panel cut from crystal.
 
 Everything is native DSP - the plugin has no dependency on Waves, Valhalla or
 FL Studio, and does not host or require the original plugins.
@@ -157,7 +157,7 @@ Source/
     TrueVerb.*          geometric room simulator
     CleanVoiceTube.*    CleanVoice's valve compressor, behind a Mix control
   gui/
-    Theme.*             procedural steel, rust, knob and cap artwork
+    Theme.*             procedural crystal, diamond-cut knob and gem artwork
     MetalKnob.*         MetalSlider.*      PanelSection.*
     RackButton.*        top rail switches and the preset name plate
 ```
