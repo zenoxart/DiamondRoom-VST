@@ -136,7 +136,10 @@ void PresetManager::applyFactoryPreset (int index)
 
 void PresetManager::loadPreset (const juce::String& name)
 {
-    const juce::ScopedValueSetter<bool> scope (loading, true);
+    const juce::ScopeGuard restoreLoading { [this, previous = loading.exchange (true)]
+    {
+        loading.store (previous);
+    } };
 
     undoManager.beginNewTransaction ("Load preset " + name);
 
@@ -260,18 +263,13 @@ juce::String PresetManager::getDisplayName() const
 
 void PresetManager::parameterChanged (const juce::String&, float)
 {
-    if (loading || modified)
+    if (loading.load() || modified.exchange (true))
         return;
 
-    modified = true;
-
-    // Called from whichever thread moved the parameter, including the audio
-    // thread when a host automates one.
-    juce::MessageManager::callAsync ([safe = juce::WeakReference<PresetManager> (this)]
-    {
-        if (safe != nullptr)
-            safe->sendChangeMessage();
-    });
+    // ChangeBroadcaster already posts a thread-safe, cancellable notification.
+    // Avoid a separate queued callback with a non-thread-safe WeakReference
+    // that can survive removal of this processor.
+    sendChangeMessage();
 }
 
 } // namespace dr

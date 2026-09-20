@@ -764,6 +764,42 @@ namespace
 
 int main (int argc, char* argv[])
 {
+    if (argc > 1 && juce::String (argv[1]) == "--lifecycle")
+    {
+        for (int cycle = 0; cycle < 5; ++cycle)
+        {
+            // Include GUI shutdown/reinitialisation, as happens when the last
+            // plugin instance is removed and the module is loaded again.
+            const juce::ScopedJuceInitialiser_GUI lifecycleGui;
+            for (int instance = 0; instance < 6; ++instance)
+            {
+                auto processor = std::make_unique<DiamondRoomAudioProcessor>();
+                processor->prepareToPlay (48000.0, 128);
+                juce::AudioBuffer<float> block (2, 128);
+                juce::MidiBuffer midi;
+                block.clear();
+                processor->processBlock (block, midi);
+                for (int reopen = 0; reopen < 2; ++reopen)
+                {
+                    std::unique_ptr<juce::AudioProcessorEditor> editor (processor->createEditor());
+                    editor->setSize (900, 344);
+                    juce::Image snapshot (juce::Image::ARGB, 900, 344, true);
+                    juce::Graphics graphics (snapshot);
+                    editor->paintEntireComponent (graphics, true);
+                    processor->getState().getParameter (dr::params::drive)
+                        ->setValueNotifyingHost (0.25f + 0.25f * (float) reopen);
+                }
+                processor->releaseResources();
+                processor.reset();
+                // Deliver notifications queued just before editor/processor deletion.
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+            }
+            std::cout << "Lifecycle cycle " << cycle + 1 << "/5 completed" << std::endl;
+        }
+        std::cout << "PASS: 30 processor removals, 60 editor closures, 5 GUI shutdowns" << std::endl;
+        return 0;
+    }
+
     const juce::ScopedJuceInitialiser_GUI juceInit;
 
     if (argc > 1 && juce::String (argv[1]) == "--audio")

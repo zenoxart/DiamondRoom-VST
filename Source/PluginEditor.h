@@ -54,8 +54,6 @@ private:
     void attachStrip (ReverbStrip& strip, const char* topId, const char* bottomId,
                       const char* mixId, const char* onId);
     void layoutStrip (ReverbStrip& strip, juce::Rectangle<int> panelBounds, float scale);
-    void drawRackFrame (juce::Graphics& g, float scale);
-    void drawTitle (juce::Graphics& g, float scale);
 
     /** Every control begins an undo transaction when its gesture starts, so
         one drag is one step rather than a hundred. */
@@ -92,7 +90,7 @@ private:
     std::unique_ptr<SliderAttachment> driveAttachment, tubeAttachment, mixAttachment;
     std::unique_ptr<juce::AlertWindow> dialog;
 
-    juce::Image panelTexture, plateTexture;
+    juce::Image plateTexture;
     int textureWidth = 0, textureHeight = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DiamondRoomAudioProcessorEditor)

@@ -490,10 +490,19 @@ void drawSubPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
         clip.addRoundedRectangle (bounds, corner);
         g.reduceClipRegion (clip);
 
+        // An opaque base colour first, then the texture on top: stretching a
+        // non-uniformly scaled image (this one is downscaled in X and
+        // upscaled in Y, since the panels are taller than the cached texture
+        // tile) can leave the odd gap at the destination's own edges that a
+        // vector fill never does, and those gaps read as whatever is behind
+        // the panel rather than as the plate. The base colour is what shows
+        // through instead, which is a much smaller defect than a hole clean
+        // through to the background image.
+        g.setColour (colours::panelFill);
+        g.fillAll();
+
         if (texture.isValid())
             g.drawImage (texture, bounds, juce::RectanglePlacement::stretchToFit);
-        else
-            g.fillAll (colours::panelFill);
 
         juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.055f),
                                     bounds.getCentreX(), bounds.getY(),

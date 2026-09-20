@@ -18,11 +18,10 @@ namespace
         at whatever angle the current value calls for - the asset only has to
         supply one rotation-independent body, not a set of them. Decoded once
         and shared by every knob on the panel. */
-    const juce::Image& knobBodyAsset()
+    juce::Image knobBodyAsset()
     {
-        static const juce::Image image = juce::ImageCache::getFromMemory (
+        return juce::ImageCache::getFromMemory (
             BinaryData::KnobBody_png, BinaryData::KnobBody_pngSize);
-        return image;
     }
 }
 

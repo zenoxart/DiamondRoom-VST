@@ -54,10 +54,9 @@ private:
     juce::UndoManager& undoManager;
 
     juce::String currentName;
-    bool modified = false;
-    bool loading = false;
+    std::atomic<bool> modified { false };
+    std::atomic<bool> loading { false };
 
-    JUCE_DECLARE_WEAK_REFERENCEABLE (PresetManager)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PresetManager)
 };
 

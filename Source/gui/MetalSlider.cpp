@@ -27,18 +27,16 @@ namespace
     /** Gem caps cropped from the reference mockup: a squarer pillow cut for
         the section faders, a tall baguette for the master one. Decoded once
         and shared by every fader on the panel. */
-    const juce::Image& sectionGemAsset()
+    juce::Image sectionGemAsset()
     {
-        static const juce::Image image = juce::ImageCache::getFromMemory (
+        return juce::ImageCache::getFromMemory (
             BinaryData::FaderGemSection_png, BinaryData::FaderGemSection_pngSize);
-        return image;
     }
 
-    const juce::Image& masterGemAsset()
+    juce::Image masterGemAsset()
     {
-        static const juce::Image image = juce::ImageCache::getFromMemory (
+        return juce::ImageCache::getFromMemory (
             BinaryData::FaderGemMaster_png, BinaryData::FaderGemMaster_pngSize);
-        return image;
     }
 }
 

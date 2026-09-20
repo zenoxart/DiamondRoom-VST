@@ -5,33 +5,11 @@ using namespace dr;
 
 namespace
 {
-    /** The title badge, cropped straight from the reference mockup complete
-        with its own glow - decorative and never rotated or resized per
-        state, so unlike the knob it needs no further work beyond loading. */
-    const juce::Image& titleBadgeAsset()
+    // Complete user-supplied artwork, including title and side branding.
+    juce::Image panelBackgroundAsset()
     {
-        static const juce::Image image = juce::ImageCache::getFromMemory (
-            BinaryData::TitleBadge_png, BinaryData::TitleBadge_pngSize);
-        return image;
-    }
-
-    /**
-        The rail's own crystal, cropped from the reference mockup with its
-        button, screw, text and diamond-mark content inpainted back out - the
-        same technique as the knob body, applied to a strip instead of a
-        streak. Reusing a full crop of the whole plugin panel here was tried
-        first and did not work: text never opaquely covers the area behind
-        it, so the reference's own baked title and captions showed through
-        around every letter of the copies this editor draws on top of them.
-        Restricting the photographic swap to the rails - where the content to
-        remove is a short, known list of buttons, screws and one line of text
-        - sidesteps that; the rest of the background stays procedural.
-    */
-    const juce::Image& railBackgroundAsset()
-    {
-        static const juce::Image image = juce::ImageCache::getFromMemory (
-            BinaryData::RailBackground_png, BinaryData::RailBackground_pngSize);
-        return image;
+        return juce::ImageCache::getFromMemory (
+            BinaryData::PanelBackground_png, BinaryData::PanelBackground_pngSize);
     }
 
     // Panel artwork coordinates, in design units (2001 x 764).
@@ -44,7 +22,6 @@ namespace
     const juce::Rectangle<int> valPanelArea   { 1004, 150, 310, 380 };
     const juce::Rectangle<int> truePanelArea  { 1325, 150, 310, 380 };
 
-    constexpr int railWidth = 100;
 
     // Popup menu item ids. Presets are offset so they cannot collide with the
     // fixed commands.
@@ -70,6 +47,23 @@ namespace
                  juce::roundToInt ((float) design.getY() * scale),
                  juce::roundToInt ((float) design.getWidth() * scale),
                  juce::roundToInt ((float) design.getHeight() * scale) };
+    }
+
+    // Map the whole control bank into the artwork's inner frame, including
+    // its controls, so resizing keeps the plates and hit areas aligned.
+    juce::Rectangle<int> controlRect (juce::Rectangle<int> design, float scale)
+    {
+        const auto mapX = [scale] (int x)
+        {
+            return juce::roundToInt ((122.0f + (float) (x - 110) * 1758.0f / 1780.0f) * scale);
+        };
+        const auto mapY = [scale] (int y)
+        {
+            return juce::roundToInt ((123.0f + (float) (y - 150) * 563.0f / 538.0f) * scale);
+        };
+        return { mapX (design.getX()), mapY (design.getY()),
+                 mapX (design.getRight()) - mapX (design.getX()),
+                 mapY (design.getBottom()) - mapY (design.getY()) };
     }
 }
 
@@ -367,15 +361,10 @@ void DiamondRoomAudioProcessorEditor::buildBackground()
     textureWidth = w;
     textureHeight = h;
 
-    const auto uiScale = (float) w / (float) theme::designWidth;
-
-    // The rails carry the photographic crop (railBackgroundAsset, drawn in
-    // drawRackFrame); the rest of the crystal field behind the plates is
-    // still procedural, faded out from the edges so it reads as the rails'
-    // own crystal breaking a little way into the panel. The control plates
-    // themselves are plain brushed metal - no crystal at all - which is what
-    // keeps a bank of six of them from turning into visual noise.
-    panelTexture = theme::createCrystalTexture (w, h, 20240517, 0.85f, 110.0f * uiScale, 1.0f);
+    // The crystal field itself is panelBackgroundAsset() now (drawn in
+    // paint()), so the only texture still generated here is the plain brushed
+    // metal the control plates sit on, which has no crystal in it at all and
+    // is what keeps a bank of six plates from turning into visual noise.
     plateTexture = theme::createBrushedMetalTexture (juce::jmax (1, w / 3), juce::jmax (1, h / 3), 77345);
 
     for (auto* panel : { &drivePanel, &tubePanel, &mixPanel })
@@ -395,18 +384,18 @@ void DiamondRoomAudioProcessorEditor::resized()
     for (auto* panel : { &drivePanel, &tubePanel, &mixPanel })
         panel->setDesignScale (scale);
 
-    drivePanel.setBounds (scaleRect (drivePanelArea, scale));
-    tubePanel.setBounds  (scaleRect (tubePanelArea, scale));
-    mixPanel.setBounds   (scaleRect (mixPanelArea, scale));
+    drivePanel.setBounds (controlRect (drivePanelArea, scale));
+    tubePanel.setBounds  (controlRect (tubePanelArea, scale));
+    mixPanel.setBounds   (controlRect (mixPanelArea, scale));
 
     // The two big knobs, centred on their plates.
     driveKnob.setDesignScale (scale);
     tubeKnob.setDesignScale (scale);
-    driveKnob.setBounds (scaleRect ({ 118,  205, 228, 300 }, scale));
-    tubeKnob.setBounds  (scaleRect ({ 1660, 205, 228, 300 }, scale));
+    driveKnob.setBounds (controlRect ({ 118,  205, 228, 300 }, scale));
+    tubeKnob.setBounds  (controlRect ({ 1660, 205, 228, 300 }, scale));
 
     masterMix.setDesignScale (scale);
-    masterMix.setBounds (scaleRect ({ 255, 544, 1490, 144 }, scale));
+    masterMix.setBounds (controlRect ({ 255, 544, 1490, 144 }, scale));
 
     // Top rail: undo/redo and preset stepping to the left of the title, the
     // settings gear to the right of it.
@@ -434,7 +423,7 @@ void DiamondRoomAudioProcessorEditor::layoutStrip (ReverbStrip& strip,
                                                    float scale)
 {
     strip.panel.setDesignScale (scale);
-    strip.panel.setBounds (scaleRect (panelBounds, scale));
+    strip.panel.setBounds (controlRect (panelBounds, scale));
 
     const auto x = panelBounds.getX();
 
@@ -444,244 +433,22 @@ void DiamondRoomAudioProcessorEditor::layoutStrip (ReverbStrip& strip,
 
     // The knob and fader components are wider than their controls: the extra
     // room is where the captions go.
-    strip.topKnob.setBounds    (scaleRect ({ x + 14,  205, 170, 160 }, scale));
-    strip.bottomKnob.setBounds (scaleRect ({ x + 14,  370, 170, 160 }, scale));
-    strip.mix.setBounds        (scaleRect ({ x + 150, 205, 170, 325 }, scale));
+    strip.topKnob.setBounds    (controlRect ({ x + 14,  205, 170, 160 }, scale));
+    strip.bottomKnob.setBounds (controlRect ({ x + 14,  370, 170, 160 }, scale));
+    strip.mix.setBounds        (controlRect ({ x + 150, 205, 170, 325 }, scale));
 }
 
 //==============================================================================
 void DiamondRoomAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    const auto scale = juce::jmin ((float) getWidth()  / (float) theme::designWidth,
-                                   (float) getHeight() / (float) theme::designHeight);
-
-    g.fillAll (juce::Colour (0xff1b1b19));
-
-    if (panelTexture.isValid())
-        g.drawImageAt (panelTexture, 0, 0);
-
-    drawRackFrame (g, scale);
-    drawTitle (g, scale);
-}
-
-void DiamondRoomAudioProcessorEditor::drawRackFrame (juce::Graphics& g, float scale)
-{
-    const auto bounds = getLocalBounds().toFloat();
-    const auto rail = (float) railWidth * scale;
-
-    // -- rack ears ---------------------------------------------------------
-    for (int side = 0; side < 2; ++side)
+    g.fillAll (dr::theme::colours::backdropDeep);
+    const auto& background = panelBackgroundAsset();
+    if (background.isValid())
     {
-        const auto area = (side == 0)
-                              ? juce::Rectangle<float> (0.0f, 0.0f, rail, bounds.getHeight())
-                              : juce::Rectangle<float> (bounds.getRight() - rail, 0.0f,
-                                                        rail, bounds.getHeight());
-
-        {
-            juce::Graphics::ScopedSaveState save (g);
-            g.reduceClipRegion (area.toNearestInt());
-
-            // One rail crop stands in for both sides, mirrored on the right -
-            // the two rails in the reference are independent crystal fields,
-            // but a single real one read as identical is a smaller departure
-            // from it than a second procedural approximation would be. The
-            // mirroring transform is scoped to just the image draw: the
-            // gradient below has to stay in unmirrored coordinates, or its
-            // dark edge would end up on the wrong side of this rail.
-            {
-                juce::Graphics::ScopedSaveState imageSave (g);
-
-                if (side == 1)
-                    g.addTransform (juce::AffineTransform::scale (-1.0f, 1.0f)
-                                        .translated (area.getX() + area.getRight(), 0.0f));
-
-                g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-                g.drawImage (railBackgroundAsset(), area, juce::RectanglePlacement::stretchToFit);
-            }
-
-            juce::ColourGradient shade (juce::Colours::black.withAlpha (0.0f),
-                                        side == 0 ? area.getX() : area.getRight(), 0.0f,
-                                        juce::Colours::black.withAlpha (0.45f),
-                                        side == 0 ? area.getRight() : area.getX(), 0.0f, false);
-            g.setGradientFill (shade);
-            g.fillRect (area);
-        }
-
-        // Mounting slots, top and bottom.
-        for (int i = 0; i < 2; ++i)
-        {
-            const auto slot = juce::Rectangle<float> (52.0f * scale, 30.0f * scale)
-                                  .withCentre ({ area.getCentreX(),
-                                                 i == 0 ? 46.0f * scale
-                                                        : bounds.getHeight() - 46.0f * scale });
-
-            g.setColour (juce::Colours::black.withAlpha (0.7f));
-            g.fillRoundedRectangle (slot.expanded (2.5f * scale), 8.0f * scale);
-
-            juce::ColourGradient lens (juce::Colour (0xffe8f6ff), slot.getX(), slot.getY(),
-                                       theme::colours::accentDeep, slot.getRight(), slot.getBottom(), false);
-            g.setGradientFill (lens);
-            g.fillRoundedRectangle (slot, 8.0f * scale);
-
-            g.setColour (theme::colours::accent.withAlpha (0.35f));
-            g.drawRoundedRectangle (slot.expanded (2.5f * scale), 8.0f * scale,
-                                    juce::jmax (0.8f, 1.6f * scale));
-            g.setColour (juce::Colours::white.withAlpha (0.65f));
-            g.drawRoundedRectangle (slot.reduced (0.5f), 8.0f * scale, juce::jmax (0.8f, 1.2f * scale));
-        }
-
-        // Screws down the inner edge.
-        for (int i = 0; i < 2; ++i)
-        {
-            const auto y = i == 0 ? 122.0f * scale : bounds.getHeight() - 122.0f * scale;
-            theme::drawScrew (g, { area.getCentreX(), y }, 9.0f * scale);
-        }
-
-        // Vertical branding and the diamond mark.
-        {
-            juce::Graphics::ScopedSaveState save (g);
-
-            const auto centre = area.getCentre();
-            g.addTransform (juce::AffineTransform::rotation (
-                side == 0 ? -juce::MathConstants<float>::halfPi
-                          :  juce::MathConstants<float>::halfPi,
-                centre.x, centre.y));
-
-            const auto textArea = juce::Rectangle<float> (bounds.getHeight() * 0.7f, rail)
-                                      .withCentre (centre)
-                                      .translated (0.0f, side == 0 ? -18.0f * scale : 18.0f * scale);
-
-            theme::drawEngravedText (g, "DIAMOND ROOM", textArea, juce::Justification::centred,
-                                     juce::jmax (7.0f, 20.0f * scale), false,
-                                     theme::colours::text.withAlpha (0.85f));
-        }
-
-        {
-            const auto d = 26.0f * scale;
-            const auto gem = juce::Rectangle<float> (d, d * 0.92f)
-                                 .withCentre ({ area.getCentreX(), bounds.getHeight() * 0.62f });
-            theme::drawDiamondOutline (g, gem, scale, theme::colours::text);
-        }
-
-        // Lit seam between the ear and the main panel.
-        const auto edgeX = side == 0 ? area.getRight() : area.getX();
-        g.setColour (juce::Colours::black.withAlpha (0.75f));
-        g.drawLine (edgeX, 0.0f, edgeX, bounds.getHeight(), juce::jmax (1.0f, 2.0f * scale));
-        g.setColour (theme::colours::accent.withAlpha (0.20f));
-        g.drawLine (edgeX + (side == 0 ? 2.0f : -2.0f) * scale, 0.0f,
-                    edgeX + (side == 0 ? 2.0f : -2.0f) * scale, bounds.getHeight(),
-                    juce::jmax (0.8f, 1.4f * scale));
-    }
-
-    // -- footer and outer frame ---------------------------------------------
-    {
-        const auto plate = bounds.reduced (rail, 0.0f);
-        const auto footer = juce::Rectangle<float> (plate.getX(), bounds.getBottom() - 44.0f * scale,
-                                                    plate.getWidth(), 28.0f * scale);
-        const auto fontHeight = juce::jmax (7.0f, 19.0f * scale);
-
-        juce::Font font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
-                                            fontHeight, juce::Font::plain));
-        font.setExtraKerningFactor (0.34f);
-
-        const auto textWidth = juce::GlyphArrangement::getStringWidth (font, "DIAMOND ROOM");
-
-        g.setFont (font);
-        g.setColour (theme::colours::textDim.withAlpha (0.75f));
-        g.drawText ("DIAMOND ROOM", footer, juce::Justification::centred, false);
-
-        const auto y = footer.getCentreY();
-        const auto gap = textWidth * 0.5f + 26.0f * scale;
-        const auto ruleLength = 70.0f * scale;
-
-        g.setColour (theme::colours::textDim.withAlpha (0.4f));
-
-        for (int side = 0; side < 2; ++side)
-        {
-            const auto x1 = plate.getCentreX() + (side == 0 ? -gap : gap);
-            g.drawLine (x1, y, x1 + (side == 0 ? -ruleLength : ruleLength), y,
-                        juce::jmax (0.8f, 1.2f * scale));
-        }
-    }
-
-    g.setColour (juce::Colours::black.withAlpha (0.8f));
-    g.drawRect (bounds, juce::jmax (1.0f, 3.0f * scale));
-}
-
-void DiamondRoomAudioProcessorEditor::drawTitle (juce::Graphics& g, float scale)
-{
-    const auto plate = juce::Rectangle<float> ((float) railWidth * scale, 0.0f,
-                                               (float) getWidth() - 2.0f * railWidth * scale,
-                                               (float) getHeight());
-
-    // The badge sits at the top edge, like a stone set into the panel.
-    {
-        const auto& asset = titleBadgeAsset();
-        const auto aspect = asset.isValid() && asset.getHeight() > 0
-                                 ? (float) asset.getWidth() / (float) asset.getHeight()
-                                 : 1.0f;
-
-        const auto width = 128.0f * scale;
-        const auto gem = juce::Rectangle<float> (width, width / aspect)
-                             .withCentre ({ plate.getCentreX(), 26.0f * scale });
-
+        g.setOpacity (1.0f);
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-        g.drawImage (asset, gem, juce::RectanglePlacement::stretchToFit);
+        g.drawImage (background, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
     }
-
-    const auto titleArea = juce::Rectangle<float> (plate.getX(), 60.0f * scale,
-                                                   plate.getWidth(), 58.0f * scale);
-    const auto fontHeight = juce::jmax (11.0f, 46.0f * scale);
-
-    juce::Font font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
-                                        fontHeight, juce::Font::plain));
-    font.setExtraKerningFactor (0.30f);
-
-    const auto textWidth = juce::GlyphArrangement::getStringWidth (font, "DIAMOND ROOM");
-
-    g.setFont (font);
-
-    // A soft halo behind the lettering, so it reads as lit rather than printed.
-    g.setColour (theme::colours::accent.withAlpha (0.16f));
-
-    for (const auto offset : { -1.5f, 1.5f })
-        g.drawText ("DIAMOND ROOM", titleArea.translated (offset * scale, 0.0f),
-                    juce::Justification::centred, false);
-
-    g.setColour (theme::colours::textShadow);
-    g.drawText ("DIAMOND ROOM", titleArea.translated (0.0f, 2.0f * scale),
-                juce::Justification::centred, false);
-    g.setColour (juce::Colours::white);
-    g.drawText ("DIAMOND ROOM", titleArea, juce::Justification::centred, false);
-
-    // Rules either side of the title, fading out away from the lettering.
-    const auto y = titleArea.getCentreY();
-    const auto gap = textWidth * 0.5f + 34.0f * scale;
-    const auto ruleLength = 150.0f * scale;
-
-    for (int side = 0; side < 2; ++side)
-    {
-        const auto x1 = plate.getCentreX() + (side == 0 ? -gap : gap);
-        const auto x2 = x1 + (side == 0 ? -ruleLength : ruleLength);
-
-        juce::ColourGradient rule (theme::colours::text.withAlpha (0.85f), x1, y,
-                                   theme::colours::text.withAlpha (0.0f), x2, y, false);
-        g.setGradientFill (rule);
-        g.drawLine (x1, y, x2, y, juce::jmax (0.9f, 1.6f * scale));
-    }
-
-    // Strapline.
-    const auto strapArea = juce::Rectangle<float> (plate.getX(), 116.0f * scale,
-                                                   plate.getWidth(), 26.0f * scale);
-
-    juce::Font strapFont (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
-                                             juce::jmax (7.0f, 18.0f * scale), juce::Font::plain));
-    strapFont.setExtraKerningFactor (0.45f);
-
-    const auto dot = juce::String::fromUTF8 ("\xc2\xb7");
-
-    g.setFont (strapFont);
-    g.setColour (theme::colours::textDim.withAlpha (0.9f));
-    g.drawText ("REFLECT " + dot + " SHAPE " + dot + " SPACE",
-                strapArea, juce::Justification::centred, false);
+    // The artwork already contains the frame, title, tagline and side labels.
+    // Interactive child components are painted above this background by JUCE.
 }
