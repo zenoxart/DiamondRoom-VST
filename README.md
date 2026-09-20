@@ -7,6 +7,11 @@ compressor, on a single 4U rack panel cut from crystal.
 Everything is native DSP - the plugin has no dependency on Waves, Valhalla or
 FL Studio, and does not host or require the original plugins.
 
+![Diamond Room plugin interface](docs/images/diamond-room.png)
+
+The complete crystal background frames the controls, with its title and side
+branding built into the artwork. The control panels fit the inner frame at all window sizes.
+
 ## Signal flow
 
 Rebuilt from the Patcher routing:
@@ -96,10 +101,8 @@ If a host still has the plugin loaded, that copy fails with a long MSB3073 error
 even though the build itself succeeded - Windows will not overwrite a DLL that is
 mapped into a running process. Close the host and build again.
 
-The `Assets/*.png` files are already-prepared crops committed to the repo - a
-normal build does not need Python, OpenCV or the original mockup at all. They
-only come back into play if the source art changes and the crops need redoing;
-see "Photographic vs. procedural artwork" below for how they were made.
+All required artwork is included in `Assets/` and embedded in the plugin.
+A normal build does not need Python, OpenCV or external image files.
 
 ## Development helper
 
@@ -115,6 +118,7 @@ cmake --build build --config Release --target DiamondRoomShot
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --drive
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --tube
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --presets
+./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --lifecycle
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe panel.png 2001
 ```
 
@@ -145,6 +149,10 @@ stays roughly level-neutral at the -14 dBFS its make-up is designed around.
 `--presets` round-trips the preset store, checks undo and redo restore parameter
 values, and checks the remembered window size survives a state save and reload.
 
+`--lifecycle` exercises 30 processor removals, 60 editor closures and five
+GUI shutdown/reinitialisation cycles, including pending parameter notifications.
+This is an offline lifecycle check; host-specific crashes still require testing in the DAW.
+
 ## Layout
 
 ```
@@ -162,51 +170,29 @@ Source/
     TrueVerb.*          geometric room simulator
     CleanVoiceTube.*    CleanVoice's valve compressor, behind a Mix control
   gui/
-    Theme.*             procedural crystal field, brushed metal, screws, text
+    Theme.*             brushed metal plates, screws, text
     MetalKnob.*         MetalSlider.*      PanelSection.*
     RackButton.*        top rail switches and the preset name plate
-Assets/                 photographic crops from the reference mockup - see below
+Assets/                 complete background and control artwork - see below
 ```
 
-### Photographic vs. procedural artwork
+### Artwork
 
-Most of the panel is generated in code (`gui/Theme.cpp`): the crystal field
-behind the plates, the brushed metal plates themselves, screws, lettering.
-Five elements instead are crops taken directly from the reference mockup and
-embedded as binary data (`juce_add_binary_data`, `Assets/*.png`), because no
-amount of procedural tuning matched the source photograph as well as the
-source photograph does:
+The plugin embeds the supplied complete background as `Assets/PanelBackground.png`.
+It includes the crystal frame, title, tagline and side branding; these are not
+redrawn over the image. The interactive control plates, labels and controls
+are drawn above the background and fitted to its inner frame.
 
-- `KnobBody.png` - the knob face and its diamond-cut girdle. The reference's
-  own pointer streak is inpainted back out (OpenCV `INPAINT_TELEA`, masked by
-  hue/saturation so it does not also erase the grey tick marks) before the
-  crop is taken, since a fresh pointer is drawn on top at whatever angle the
-  live parameter value calls for - the asset only has to supply one
-  rotation-independent body, not a family of them at every angle.
-- `FaderGemSection.png` / `FaderGemMaster.png` - the two fader caps. These
-  never rotate, only translate, so they needed no cleanup at all.
-- `TitleBadge.png` - the glowing diamond above the title.
-- `RailBackground.png` - one of the two side rails' own crystal, with its
-  buttons, screws, "DIAMOND ROOM" lettering and diamond mark inpainted back
-  out (again OpenCV, this time explicit masks per element rather than a
-  colour rule, since a button and a screw do not share one). The same crop
-  stands in for both rails, mirrored on the right via an `AffineTransform`
-  scoped to just that draw call. Everything an editor control draws
-  afterwards - the button, the screw, the text, the diamond mark - sits on
-  top of it at the same position as before, now over real crystal rather
-  than a generated approximation of it.
+- `PanelBackground.png` - the complete background artwork.
+- `KnobBody.png` - the knob face, with a live parameter pointer drawn over it.
+- `FaderGemSection.png` / `FaderGemMaster.png` - the section and master fader caps.
 
-A whole-panel crop was tried first and dropped: pasted in as one background
-image with the editor's own controls drawn on top, every plate and knob
-disappeared under its own opaque redraw as expected, but text does not work
-that way - it only covers its own glyph shapes, so the reference's own baked
-title and captions showed through around every letter of the copies drawn
-over them. Restricting the photographic swap to the rails, where the content
-to remove is a short, enumerable list of shapes, sidesteps that; the main
-crystal field stays procedural.
+Assets are shared through JUCE's image cache and scaled to the current window
+size. Their lifetime follows JUCE's cache rather than static image objects
+that would retain graphics resources until the plugin library unloads.
 
-All five are decoded once via `juce::ImageCache` and drawn scaled to fit
-(`Graphics::drawImage` with high-quality resampling), so one ~230 px knob crop
-stands in for every knob on the panel from the two big end ones down to the
-small per-reverb pairs, and downscaling a photograph resamples a great deal
-more cleanly than upscaling one would.
+The README screenshot is rendered from the actual editor. To refresh it:
+
+```bash
+./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe docs/images/diamond-room.png 1600
+```
