@@ -15,6 +15,25 @@ namespace
         return image;
     }
 
+    /**
+        The rail's own crystal, cropped from the reference mockup with its
+        button, screw, text and diamond-mark content inpainted back out - the
+        same technique as the knob body, applied to a strip instead of a
+        streak. Reusing a full crop of the whole plugin panel here was tried
+        first and did not work: text never opaquely covers the area behind
+        it, so the reference's own baked title and captions showed through
+        around every letter of the copies this editor draws on top of them.
+        Restricting the photographic swap to the rails - where the content to
+        remove is a short, known list of buttons, screws and one line of text
+        - sidesteps that; the rest of the background stays procedural.
+    */
+    const juce::Image& railBackgroundAsset()
+    {
+        static const juce::Image image = juce::ImageCache::getFromMemory (
+            BinaryData::RailBackground_png, BinaryData::RailBackground_pngSize);
+        return image;
+    }
+
     // Panel artwork coordinates, in design units (2001 x 764).
     const juce::Rectangle<int> drivePanelArea { 110, 150, 238, 380 };
     const juce::Rectangle<int> tubePanelArea  { 1652, 150, 238, 380 };
@@ -350,17 +369,14 @@ void DiamondRoomAudioProcessorEditor::buildBackground()
 
     const auto uiScale = (float) w / (float) theme::designWidth;
 
-    // The rails are the crystal showpiece, at full brightness and no fade.
-    // The main backdrop carries the same cut but faded out from the edges, so
-    // it reads as the rails' crystal breaking a little way into the panel
-    // rather than a texture covering the whole plugin. The control plates
+    // The rails carry the photographic crop (railBackgroundAsset, drawn in
+    // drawRackFrame); the rest of the crystal field behind the plates is
+    // still procedural, faded out from the edges so it reads as the rails'
+    // own crystal breaking a little way into the panel. The control plates
     // themselves are plain brushed metal - no crystal at all - which is what
     // keeps a bank of six of them from turning into visual noise.
     panelTexture = theme::createCrystalTexture (w, h, 20240517, 0.85f, 110.0f * uiScale, 1.0f);
     plateTexture = theme::createBrushedMetalTexture (juce::jmax (1, w / 3), juce::jmax (1, h / 3), 77345);
-    railTexture  = theme::createCrystalTexture (
-        juce::jmax (1, juce::roundToInt ((float) railWidth * uiScale)),
-        h, 991733, 1.7f, 90.0f * uiScale);
 
     for (auto* panel : { &drivePanel, &tubePanel, &mixPanel })
         panel->setTexture (plateTexture);
@@ -465,8 +481,23 @@ void DiamondRoomAudioProcessorEditor::drawRackFrame (juce::Graphics& g, float sc
             juce::Graphics::ScopedSaveState save (g);
             g.reduceClipRegion (area.toNearestInt());
 
-            if (railTexture.isValid())
-                g.drawImage (railTexture, area, juce::RectanglePlacement::stretchToFit);
+            // One rail crop stands in for both sides, mirrored on the right -
+            // the two rails in the reference are independent crystal fields,
+            // but a single real one read as identical is a smaller departure
+            // from it than a second procedural approximation would be. The
+            // mirroring transform is scoped to just the image draw: the
+            // gradient below has to stay in unmirrored coordinates, or its
+            // dark edge would end up on the wrong side of this rail.
+            {
+                juce::Graphics::ScopedSaveState imageSave (g);
+
+                if (side == 1)
+                    g.addTransform (juce::AffineTransform::scale (-1.0f, 1.0f)
+                                        .translated (area.getX() + area.getRight(), 0.0f));
+
+                g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+                g.drawImage (railBackgroundAsset(), area, juce::RectanglePlacement::stretchToFit);
+            }
 
             juce::ColourGradient shade (juce::Colours::black.withAlpha (0.0f),
                                         side == 0 ? area.getX() : area.getRight(), 0.0f,

@@ -170,11 +170,12 @@ Assets/                 photographic crops from the reference mockup - see below
 
 ### Photographic vs. procedural artwork
 
-Most of the panel is generated in code (`gui/Theme.cpp`): the crystal field,
-the brushed metal plates, screws, lettering. Four elements instead are crops
-taken directly from the reference mockup and embedded as binary data
-(`juce_add_binary_data`, `Assets/*.png`), because no amount of procedural
-tuning matched the source photograph as well as the source photograph does:
+Most of the panel is generated in code (`gui/Theme.cpp`): the crystal field
+behind the plates, the brushed metal plates themselves, screws, lettering.
+Five elements instead are crops taken directly from the reference mockup and
+embedded as binary data (`juce_add_binary_data`, `Assets/*.png`), because no
+amount of procedural tuning matched the source photograph as well as the
+source photograph does:
 
 - `KnobBody.png` - the knob face and its diamond-cut girdle. The reference's
   own pointer streak is inpainted back out (OpenCV `INPAINT_TELEA`, masked by
@@ -185,8 +186,26 @@ tuning matched the source photograph as well as the source photograph does:
 - `FaderGemSection.png` / `FaderGemMaster.png` - the two fader caps. These
   never rotate, only translate, so they needed no cleanup at all.
 - `TitleBadge.png` - the glowing diamond above the title.
+- `RailBackground.png` - one of the two side rails' own crystal, with its
+  buttons, screws, "DIAMOND ROOM" lettering and diamond mark inpainted back
+  out (again OpenCV, this time explicit masks per element rather than a
+  colour rule, since a button and a screw do not share one). The same crop
+  stands in for both rails, mirrored on the right via an `AffineTransform`
+  scoped to just that draw call. Everything an editor control draws
+  afterwards - the button, the screw, the text, the diamond mark - sits on
+  top of it at the same position as before, now over real crystal rather
+  than a generated approximation of it.
 
-All four are decoded once via `juce::ImageCache` and drawn scaled to fit
+A whole-panel crop was tried first and dropped: pasted in as one background
+image with the editor's own controls drawn on top, every plate and knob
+disappeared under its own opaque redraw as expected, but text does not work
+that way - it only covers its own glyph shapes, so the reference's own baked
+title and captions showed through around every letter of the copies drawn
+over them. Restricting the photographic swap to the rails, where the content
+to remove is a short, enumerable list of shapes, sidesteps that; the main
+crystal field stays procedural.
+
+All five are decoded once via `juce::ImageCache` and drawn scaled to fit
 (`Graphics::drawImage` with high-quality resampling), so one ~230 px knob crop
 stands in for every knob on the panel from the two big end ones down to the
 small per-reverb pairs, and downscaling a photograph resamples a great deal

@@ -92,7 +92,7 @@ private:
     std::unique_ptr<SliderAttachment> driveAttachment, tubeAttachment, mixAttachment;
     std::unique_ptr<juce::AlertWindow> dialog;
 
-    juce::Image panelTexture, plateTexture, railTexture;
+    juce::Image panelTexture, plateTexture;
     int textureWidth = 0, textureHeight = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DiamondRoomAudioProcessorEditor)

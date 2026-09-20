@@ -29,15 +29,20 @@ namespace colours
 }
 
 //==============================================================================
-/** Faceted crystal, generated once and cached.
+/**
+    Faceted crystal, generated once and cached. Superseded by the photographic
+    PanelBackground asset (see PluginEditor.cpp), which is the actual crystal
+    field from the reference rather than an approximation of it, but kept as a
+    fallback should the background ever need to scale to a size or aspect
+    ratio the source crop cannot cover well.
 
     `brightness` scales the whole field. `shardSize` is the rough width a facet
     should end up, in pixels, which is what decides how deep the subdivision
     runs. `edgeFalloff` (0..1) fades the field out towards the horizontal
     centre of the image, so it reads as a crystal formation breaking in from
-    the left and right rather than a texture that fills the whole plate - the
-    reference art keeps the crystal on the rails and the corners, and leaves
-    the centre of the panel close to flat. 0 disables the fade entirely. */
+    the left and right rather than a texture that fills the whole plate. 0
+    disables the fade entirely.
+*/
 juce::Image createCrystalTexture (int width, int height, int seed, float brightness,
                                   float shardSize, float edgeFalloff = 0.0f);
 

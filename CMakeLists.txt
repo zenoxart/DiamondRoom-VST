@@ -20,6 +20,7 @@ juce_add_binary_data(DiamondRoomAssets SOURCES
     Assets/FaderGemSection.png
     Assets/FaderGemMaster.png
     Assets/TitleBadge.png
+    Assets/RailBackground.png
 )
 
 juce_add_plugin(DiamondRoom
