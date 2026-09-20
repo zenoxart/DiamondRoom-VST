@@ -10,12 +10,14 @@
            DiamondRoomShot --ui             (fader geometry self-test)
            DiamondRoomShot --drive          (Drive harmonic analysis)
            DiamondRoomShot --presets        (presets, undo/redo, saved size)
+           DiamondRoomShot --tube           (CleanVoice valve stage and its Mix)
 */
 
 #include <iomanip>
 #include <map>
 
 #include "../Source/PluginProcessor.h"
+#include "../Source/dsp/CleanVoiceTube.h"
 #include "../Source/dsp/OneKnobDriver.h"
 #include "../Source/gui/MetalSlider.h"
 
@@ -33,7 +35,8 @@ namespace
         float evenDb = 0.0f;      // 2nd + 4th, relative to the fundamental
         float oddDb = 0.0f;       // 3rd + 5th, relative to the fundamental
         float levelChangeDb = 0.0f;
-        float tiltDb = 0.0f;      // high band against low band, on noise
+        float tiltDb = 0.0f;         // high band against low band, on noise
+        float noiseLevelDb = 0.0f;   // broadband level change on noise
     };
 
     DriveSpectrum measureDrive (float driveAmount)
@@ -120,8 +123,10 @@ namespace
         return result;
     }
 
-    /** High-band against low-band energy on noise, i.e. how bright the stage is. */
-    float measureTilt (float driveAmount)
+    struct NoiseResult { float tiltDb = 0.0f; float levelDb = 0.0f; };
+
+    /** Tilt and output level on noise - the closest thing here to real material. */
+    NoiseResult measureOnNoise (float driveAmount)
     {
         constexpr double rate = 48000.0;
         constexpr int block = 512;
@@ -176,26 +181,40 @@ namespace
         const auto low = bandEnergy (100.0, 1000.0);
         const auto high = bandEnergy (6000.0, 16000.0);
 
-        return (float) (10.0 * std::log10 (juce::jmax (1.0e-30, high)
-                                             / juce::jmax (1.0e-30, low)));
+        double sumSquares = 0.0;
+        for (auto sample : captured)
+            sumSquares += (double) sample * sample;
+
+        const auto outRms = std::sqrt (sumSquares / juce::jmax<size_t> (1, captured.size()));
+        const auto inRms = 0.126 / std::sqrt (3.0);   // uniform noise
+
+        NoiseResult result;
+        result.tiltDb = (float) (10.0 * std::log10 (juce::jmax (1.0e-30, high)
+                                                      / juce::jmax (1.0e-30, low)));
+        result.levelDb = (float) (20.0 * std::log10 (juce::jmax (1.0e-12, outRms)
+                                                       / juce::jmax (1.0e-12, inRms)));
+        return result;
     }
 
     int runDriveSelfTest()
     {
-        std::cout << "drive   even(2+4)   odd(3+5)   level      HF tilt" << std::endl;
+        std::cout << "drive   even(2+4)   odd(3+5)   sine lvl   noise lvl   HF tilt" << std::endl;
 
         std::map<int, DriveSpectrum> results;
 
         for (const auto amount : { 0, 3, 6, 10 })
         {
             auto spectrum = measureDrive ((float) amount);
-            spectrum.tiltDb = measureTilt ((float) amount);
+            const auto noise = measureOnNoise ((float) amount);
+            spectrum.tiltDb = noise.tiltDb;
+            spectrum.noiseLevelDb = noise.levelDb;
             results[amount] = spectrum;
 
             std::cout << "  " << std::setw (2) << amount
                       << "   " << std::setw (8) << juce::String (spectrum.evenDb, 1).toStdString()
                       << "   " << std::setw (8) << juce::String (spectrum.oddDb, 1).toStdString()
                       << "   " << std::setw (7) << (juce::String (spectrum.levelChangeDb, 1) + " dB").toStdString()
+                      << "   " << std::setw (8) << (juce::String (spectrum.noiseLevelDb, 1) + " dB").toStdString()
                       << "   " << std::setw (8) << (juce::String (spectrum.tiltDb, 1) + " dB").toStdString()
                       << std::endl;
         }
@@ -222,16 +241,111 @@ namespace
         if (driven.oddDb < -40.0f)
             fail ("no odd harmonics at Drive 10");
 
-        // Saturating must not cost level, which is what a makeup derived from
-        // the input gain rather than the shaper's response would do.
-        if (std::abs (driven.levelChangeDb) > 6.0f)
-            fail ("level moves " + juce::String (driven.levelChangeDb, 1) + " dB at Drive 10");
+        // The complaint this test exists for: driving harder must not turn the
+        // signal down. Measured on noise, because a sine sits below the tone
+        // filtering and hides exactly the loss that is audible on real material.
+        for (const auto amount : { 3, 6, 10 })
+            if (std::abs (results[amount].noiseLevelDb - clean.noiseLevelDb) > 3.0f)
+                fail ("Drive " + juce::String (amount) + " shifts broadband level by "
+                        + juce::String (results[amount].noiseLevelDb - clean.noiseLevelDb, 1) + " dB");
 
         // Measured on noise, not on the sine: adding harmonics to a sine
         // raises its centroid no matter how dark the stage is.
         if (driven.tiltDb > clean.tiltDb - 6.0f)
             fail ("driving does not darken the tone, tilt "
                     + juce::String (clean.tiltDb, 1) + " -> " + juce::String (driven.tiltDb, 1) + " dB");
+
+        std::cout << (ok ? "PASS" : "FAILED") << std::endl;
+        return ok ? 0 : 1;
+    }
+
+    //==========================================================================
+    /**
+        The Tube stage is CleanVoice's valve compressor behind a Mix control, so
+        what matters is that Mix 0 is a true bypass and Mix 10 both compresses
+        and colours.
+    */
+    int runTubeSelfTest()
+    {
+        constexpr double rate = 48000.0;
+        constexpr int block = 512;
+        constexpr int blocks = 120;
+
+        bool ok = true;
+
+        auto check = [&ok] (bool condition, const juce::String& what)
+        {
+            std::cout << "  " << (condition ? "ok   " : "FAIL ") << what << std::endl;
+            ok = ok && condition;
+        };
+
+        struct Outcome { float levelDb, worstDeviation, gainReductionDb; };
+
+        auto run = [rate, block, blocks] (float mix)
+        {
+            dr::CleanVoiceTube tube;
+            tube.prepare ({ rate, (juce::uint32) block, 2 });
+            tube.setMix (mix);
+
+            juce::AudioBuffer<float> buffer (2, block);
+            juce::Random random (0x7ab3);
+
+            double sumSquares = 0.0, inSumSquares = 0.0;
+            float worst = 0.0f;
+            int counted = 0;
+
+            for (int b = 0; b < blocks; ++b)
+            {
+                std::vector<float> input ((size_t) block);
+
+                for (int n = 0; n < block; ++n)
+                {
+                    // 0.2 RMS, i.e. -14 dBFS: the nominal level CleanVoice
+                    // derives its static make-up at, and well over the
+                    // -20 dBFS threshold.
+                    input[(size_t) n] = 0.346f * (random.nextFloat() * 2.0f - 1.0f);
+
+                    for (int ch = 0; ch < 2; ++ch)
+                        buffer.setSample (ch, n, input[(size_t) n]);
+                }
+
+                juce::dsp::AudioBlock<float> audioBlock (buffer);
+                tube.process (audioBlock);
+
+                if (b < blocks / 2)
+                    continue;
+
+                for (int n = 0; n < block; ++n)
+                {
+                    const auto out = buffer.getSample (0, n);
+                    worst = juce::jmax (worst, std::abs (out - input[(size_t) n]));
+                    sumSquares += (double) out * out;
+                    inSumSquares += (double) input[(size_t) n] * input[(size_t) n];
+                    ++counted;
+                }
+            }
+
+            const auto outRms = std::sqrt (sumSquares / juce::jmax (1, counted));
+            const auto inRms = std::sqrt (inSumSquares / juce::jmax (1, counted));
+
+            return Outcome { (float) (20.0 * std::log10 (juce::jmax (1.0e-12, outRms / inRms))),
+                             worst,
+                             tube.getGainReductionDb() };
+        };
+
+        const auto bypassed = run (0.0f);
+        const auto engaged = run (10.0f);
+
+        std::cout << "  mix 0  : level " << juce::String (bypassed.levelDb, 2)
+                  << " dB, max deviation " << bypassed.worstDeviation << std::endl;
+        std::cout << "  mix 10 : level " << juce::String (engaged.levelDb, 2)
+                  << " dB, gain reduction " << juce::String (engaged.gainReductionDb, 1)
+                  << " dB" << std::endl;
+
+        check (bypassed.worstDeviation < 1.0e-6f, "Mix 0 passes the signal through untouched");
+        check (engaged.gainReductionDb > 2.0f, "Mix 10 compresses");
+        check (engaged.worstDeviation > 1.0e-3f, "Mix 10 changes the signal");
+        check (std::abs (engaged.levelDb) < 4.0f, "Mix 10 stays roughly level-neutral");
 
         std::cout << (ok ? "PASS" : "FAILED") << std::endl;
         return ok ? 0 : 1;
@@ -663,6 +777,9 @@ int main (int argc, char* argv[])
 
     if (argc > 1 && juce::String (argv[1]) == "--presets")
         return runPresetSelfTest();
+
+    if (argc > 1 && juce::String (argv[1]) == "--tube")
+        return runTubeSelfTest();
 
     const juce::File output = argc > 1
         ? juce::File::getCurrentWorkingDirectory().getChildFile (juce::String (argv[1]))

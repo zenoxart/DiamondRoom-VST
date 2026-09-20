@@ -36,7 +36,7 @@ target_sources(DiamondRoom PRIVATE
     Source/dsp/MannyMReverb.cpp
     Source/dsp/ValhallaVerb.cpp
     Source/dsp/TrueVerb.cpp
-    Source/dsp/PuigChild.cpp
+    Source/dsp/CleanVoiceTube.cpp
     Source/gui/Theme.cpp
     Source/gui/MetalKnob.cpp
     Source/gui/MetalSlider.cpp

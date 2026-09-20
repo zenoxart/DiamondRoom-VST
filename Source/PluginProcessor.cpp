@@ -25,31 +25,29 @@ void DiamondRoomAudioProcessor::prepareToPlay (double sampleRate, int samplesPer
     trueVerb.prepare (spec);
     tube.prepare (spec);
 
-    for (auto* buffer : { &dryBuffer, &drivenBuffer, &wetBuffer, &sumBuffer })
+    for (auto* buffer : { &dryBuffer, &drivenBuffer, &wetBuffer })
     {
         buffer->setSize (2, maxBlockSize, false, false, true);
         buffer->clear();
     }
 
-    // The Driver now sits ahead of the split, so both branches carry its
-    // latency and only the tube stage has to be compensated for on the dry
-    // side. The host still has to be told about both.
-    dryDelayLength = (int) std::ceil (tube.getLatencySamples());
-    setLatencySamples ((int) std::ceil (driver.getLatencySamples()) + dryDelayLength);
+    // The Driver sits ahead of the dry/wet split, so both branches carry its
+    // latency equally, and the tube stage runs at the base rate. Nothing on the
+    // dry path needs delaying; the host only has to know about the Driver.
+    dryDelayLength = 0;
+    setLatencySamples ((int) std::ceil (driver.getLatencySamples()));
 
     dryDelayBuffer.setSize (2, juce::jmax (1, dryDelayLength + 1), false, false, true);
     dryDelayBuffer.clear();
     dryDelayWritePos = 0;
 
     const auto rampSeconds = 0.03;
-    for (auto* s : { &hMixSmooth, &mMixSmooth, &vMixSmooth, &tMixSmooth,
-                     &tubeBlendSmooth, &masterMixSmooth })
+    for (auto* s : { &hMixSmooth, &mMixSmooth, &vMixSmooth, &tMixSmooth, &masterMixSmooth })
         s->reset (sampleRate, rampSeconds);
 
     updateParameters();
 
-    for (auto* s : { &hMixSmooth, &mMixSmooth, &vMixSmooth, &tMixSmooth,
-                     &tubeBlendSmooth, &masterMixSmooth })
+    for (auto* s : { &hMixSmooth, &mMixSmooth, &vMixSmooth, &tMixSmooth, &masterMixSmooth })
         s->setCurrentAndTargetValue (s->getTargetValue());
 }
 
@@ -92,7 +90,7 @@ void DiamondRoomAudioProcessor::updateParameters()
     trueVerb.setDistance (cache.tDistance->load());
     trueVerb.setRoomsize (cache.tRoomsize->load());
 
-    tube.setAmount (cache.tube->load());
+    tube.setMix (cache.tube->load());
 
     hActive = cache.hOn->load() > 0.5f;
     mActive = cache.mOn->load() > 0.5f;
@@ -104,7 +102,6 @@ void DiamondRoomAudioProcessor::updateParameters()
     vMixSmooth.setTargetValue (vActive ? cache.vMix->load() * 0.01f : 0.0f);
     tMixSmooth.setTargetValue (tActive ? cache.tMix->load() * 0.01f : 0.0f);
 
-    tubeBlendSmooth.setTargetValue (cache.tube->load() * 0.1f);
     masterMixSmooth.setTargetValue (cache.mix->load() * 0.01f);
 }
 
@@ -219,26 +216,11 @@ void DiamondRoomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         wetR[n] = sumR;
     }
 
-    // -- 3. Tube: parallel blend of the raw sum and the PuigChild ----------
-    sumBuffer.makeCopyOf (wetBuffer, true);
-
+    // -- 3. Tube: the CleanVoice valve stage, blended by its own Mix -------
     {
         juce::dsp::AudioBlock<float> block (wetBuffer.getArrayOfWritePointers(),
                                             2, (size_t) numSamples);
         tube.process (block);
-    }
-
-    {
-        float* wet[2] { wetBuffer.getWritePointer (0), wetBuffer.getWritePointer (1) };
-        const float* raw[2] { sumBuffer.getReadPointer (0), sumBuffer.getReadPointer (1) };
-
-        for (int n = 0; n < numSamples; ++n)
-        {
-            const auto t = tubeBlendSmooth.getNextValue();
-
-            for (int ch = 0; ch < 2; ++ch)
-                wet[ch][n] = raw[ch][n] + t * (wet[ch][n] - raw[ch][n]);
-        }
     }
 
     // -- 4. dry delay compensation and the master Mix ----------------------

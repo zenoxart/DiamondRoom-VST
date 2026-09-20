@@ -130,6 +130,117 @@ private:
 };
 
 //==============================================================================
+/**
+    Direct-form-II transposed biquad with the RBJ cookbook designs.
+
+    The TPT filter above is the better behaved one when coefficients are being
+    swept, but the CleanVoice tube stage is specified in terms of these, so the
+    port keeps them to stay sample accurate against it.
+*/
+struct Biquad
+{
+    void reset() noexcept { z1 = z2 = 0.0f; }
+
+    void setCoefficients (double b0_, double b1_, double b2_, double a1_, double a2_) noexcept
+    {
+        b0 = (float) b0_; b1 = (float) b1_; b2 = (float) b2_;
+        a1 = (float) a1_; a2 = (float) a2_;
+    }
+
+    inline float processSample (float x) noexcept
+    {
+        const auto y = b0 * x + z1;
+        z1 = flushDenormal (b1 * x - a1 * y + z2);
+        z2 = flushDenormal (b2 * x - a2 * y);
+        return y;
+    }
+
+    void makeHighpass (double sampleRate, double freq, double q) noexcept
+    {
+        const auto w = juce::MathConstants<double>::twoPi * normalised (freq, sampleRate);
+        const auto cosw = std::cos (w), alpha = std::sin (w) / (2.0 * q);
+        const auto a0 = 1.0 + alpha;
+
+        setCoefficients ((1.0 + cosw) * 0.5 / a0, -(1.0 + cosw) / a0, (1.0 + cosw) * 0.5 / a0,
+                         -2.0 * cosw / a0, (1.0 - alpha) / a0);
+    }
+
+    void makeHighShelf (double sampleRate, double freq, double q, double gainDb) noexcept
+    {
+        const auto A = std::pow (10.0, gainDb / 40.0);
+        const auto w = juce::MathConstants<double>::twoPi * normalised (freq, sampleRate);
+        const auto cosw = std::cos (w);
+        const auto alpha = std::sin (w) / (2.0 * q);
+        const auto beta = 2.0 * std::sqrt (A) * alpha;
+        const auto a0 = (A + 1.0) - (A - 1.0) * cosw + beta;
+
+        setCoefficients (A * ((A + 1.0) + (A - 1.0) * cosw + beta) / a0,
+                         -2.0 * A * ((A - 1.0) + (A + 1.0) * cosw) / a0,
+                         A * ((A + 1.0) + (A - 1.0) * cosw - beta) / a0,
+                         2.0 * ((A - 1.0) - (A + 1.0) * cosw) / a0,
+                         ((A + 1.0) - (A - 1.0) * cosw - beta) / a0);
+    }
+
+private:
+    static double normalised (double freq, double sampleRate) noexcept
+    {
+        return juce::jlimit (1.0e-5, 0.49, freq / juce::jmax (1.0, sampleRate));
+    }
+
+    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    float z1 = 0.0f, z2 = 0.0f;
+};
+
+//==============================================================================
+/** Attack/release envelope follower on a rectified signal. */
+struct EnvelopeFollower
+{
+    void prepare (double sr) noexcept { sampleRate = sr; reset(); }
+    void reset() noexcept { envelope = 0.0f; }
+
+    static float timeToCoefficient (float milliseconds, double sampleRate) noexcept
+    {
+        if (milliseconds <= 0.0f)
+            return 0.0f;
+
+        return std::exp (-1.0f / (float) (milliseconds * 0.001 * sampleRate));
+    }
+
+    void setTimes (float attackMs, float releaseMs) noexcept
+    {
+        attackCoeff  = timeToCoefficient (attackMs, sampleRate);
+        releaseCoeff = timeToCoefficient (releaseMs, sampleRate);
+    }
+
+    inline float processSample (float rectified) noexcept
+    {
+        const auto coeff = rectified > envelope ? attackCoeff : releaseCoeff;
+        envelope = flushDenormal (rectified + coeff * (envelope - rectified));
+        return envelope;
+    }
+
+    double sampleRate = 44100.0;
+    float attackCoeff = 0.0f, releaseCoeff = 0.0f, envelope = 0.0f;
+};
+
+/** Compressor gain in dB for a given overshoot, with a quadratic soft knee. */
+inline float softKneeGain (float overDb, float kneeDb, float ratio) noexcept
+{
+    const auto slope = 1.0f / ratio - 1.0f;
+
+    if (2.0f * overDb < -kneeDb)
+        return 0.0f;
+
+    if (2.0f * std::abs (overDb) <= kneeDb)
+    {
+        const auto t = overDb + kneeDb * 0.5f;
+        return slope * t * t / (2.0f * kneeDb);
+    }
+
+    return slope * overDb;
+}
+
+//==============================================================================
 /** Fractional delay line with linear interpolation, power-of-two masked. */
 class DelayLine
 {

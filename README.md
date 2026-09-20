@@ -1,7 +1,7 @@
 # Diamond Room
 
 A JUCE/C++ VST3 rebuild of the `DiamondRoom.fst` FL Studio Patcher preset: four
-parallel reverbs fed from a saturation stage, summed through a vari-mu tube
+parallel reverbs fed from a saturation stage, summed through a valve
 compressor, on a single 4U rack panel.
 
 Everything is native DSP - the plugin has no dependency on Waves, Valhalla or
@@ -27,15 +27,15 @@ The Patcher fed only the reverbs from the Driver, leaving the dial inaudible at
 anything but a very wet Mix. Here it sits ahead of the split, so Drive colours
 the whole signal.
 
-`Tube` is a parallel blend: at 0 the sum passes clean, at 10 it is entirely the
-PuigChild path - which is how the two branches into the final balance node in
-the Patcher graph behave.
+`Tube` is the valve stage from CleanVoice, ported unchanged, with the dial as
+its Mix: at 0 the sum passes through untouched, at 10 the stage is fully in
+circuit. In CleanVoice it is a switch; here it can be blended.
 
 ## Controls
 
 | Control | Range | What it does |
 | --- | --- | --- |
-| Drive | 0–10 | Asymmetric valve overdrive over the whole signal: even and odd harmonics, progressively darker, 4x oversampled |
+| Drive | 0–10 | Aggressive valve overdrive over the whole signal: even and odd harmonics, progressively darker, level held constant, 4x oversampled |
 | H-Reverb Tone | ±10 | Tilt around 900 Hz on the H-Reverb tail |
 | H-Reverb Time | 0–10 | RT60, 0.25 s to 10 s (preset value 3.24 s ≈ 6.9) |
 | MannyM Distortion | 0–10 | Saturation on the chamber output |
@@ -44,7 +44,7 @@ the Patcher graph behave.
 | Valhalla Decay | 0–10 | 0.3 s to 9 s (preset value 2.23 s ≈ 5.9) |
 | True Verb Distance | 0–10 | 0.5 m to 30 m; sets early/tail balance and air absorption |
 | True Verb Roomsize | 0–10 | 200 m³ to 30000 m³; sets reflection spacing, tank length and decay (0.5 s to 1.9 s) |
-| Tube | 0–10 | Drive into the PuigChild 670 and its blend into the sum |
+| Tube | 0–10 | Mix of the CleanVoice valve compressor on the reverb sum |
 | Section LEDs | on/off | Arm each reverb |
 | H-Mix … TrueVerb Mix | 0–100 % | Level of each reverb into the sum |
 | Mix | 0–100 % | Master dry/wet |
@@ -108,6 +108,7 @@ cmake --build build --config Release --target DiamondRoomShot
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --audio
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --ui
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --drive
+./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --tube
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --presets
 ./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe panel.png 2001
 ```
@@ -118,9 +119,23 @@ overrides `resized()` without calling the base leaves JUCE's draggable region
 one pixel wide, and the fader becomes impossible to set.
 
 `--drive` runs an FFT over the Drive stage and reports even and odd harmonic
-content, level change, and high-band tilt at several settings. Tone has to be
-measured on noise, not on a sine: adding harmonics to a sine raises its spectral
-centroid however dark the stage is.
+content, level change and high-band tilt at several settings. Both tone and
+level have to be measured on noise rather than on a sine: a sine sits below the
+tone filtering, so it shows neither the level the filtering costs on real
+material nor the darkening itself, since adding harmonics to a sine raises its
+spectral centroid however dark the stage is.
+
+At Drive 0 / 10 it currently reports:
+
+| | 0 | 10 |
+| --- | --- | --- |
+| even harmonics | -144 dBc | -12.5 dBc |
+| odd harmonics | -144 dBc | -8.8 dBc |
+| broadband level | 0 dB | 0 dB |
+| high band tilt | +10.4 dB | -10.0 dB |
+
+`--tube` checks Mix 0 is a bit-exact bypass and Mix 10 both compresses and
+stays roughly level-neutral at the -14 dBFS its make-up is designed around.
 
 `--presets` round-trips the preset store, checks undo and redo restore parameter
 values, and checks the remembered window size survives a state save and reload.
@@ -140,7 +155,7 @@ Source/
     MannyMReverb.*      chamber with output distortion and phaser
     ValhallaVerb.*      Concert Hall, 1970s colour
     TrueVerb.*          geometric room simulator
-    PuigChild.*         vari-mu compressor and tube/transformer colour
+    CleanVoiceTube.*    CleanVoice's valve compressor, behind a Mix control
   gui/
     Theme.*             procedural steel, rust, knob and cap artwork
     MetalKnob.*         MetalSlider.*      PanelSection.*

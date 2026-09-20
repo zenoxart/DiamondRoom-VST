@@ -7,7 +7,7 @@
 #include "dsp/HReverb.h"
 #include "dsp/MannyMReverb.h"
 #include "dsp/OneKnobDriver.h"
-#include "dsp/PuigChild.h"
+#include "dsp/CleanVoiceTube.h"
 #include "dsp/TrueVerb.h"
 #include "dsp/ValhallaVerb.h"
 
@@ -18,7 +18,7 @@
         in -> Driver -> [ H-Reverb | MannyM | Valhalla | TrueVerb ] -> Sum
                               (each with its own mix)                  |
                                                                        v
-        out <- Mix (dry/wet) <------------ Sum + PuigChild 670 (Tube blend)
+        out <- Mix (dry/wet) <------------ Sum -> Tube (CleanVoice valve)
 */
 class DiamondRoomAudioProcessor final : public juce::AudioProcessor
 {
@@ -75,9 +75,9 @@ private:
     dr::MannyMReverb mannyReverb;
     dr::ValhallaVerb valhallaReverb;
     dr::TrueVerb trueVerb;
-    dr::PuigChild tube;
+    dr::CleanVoiceTube tube;
 
-    juce::AudioBuffer<float> dryBuffer, drivenBuffer, wetBuffer, sumBuffer;
+    juce::AudioBuffer<float> dryBuffer, drivenBuffer, wetBuffer;
     int maxBlockSize = 512;
 
     // Keeps the dry path aligned with the oversamplers in the wet path.
@@ -85,7 +85,7 @@ private:
     int dryDelayLength = 0, dryDelayWritePos = 0;
 
     juce::SmoothedValue<float> hMixSmooth, mMixSmooth, vMixSmooth, tMixSmooth;
-    juce::SmoothedValue<float> tubeBlendSmooth, masterMixSmooth;
+    juce::SmoothedValue<float> masterMixSmooth;
 
     bool hActive = true, mActive = true, vActive = true, tActive = true;
 
