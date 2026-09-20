@@ -112,6 +112,25 @@ jobs:
           mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
           ditto 'build/DiamondRoom_artefacts/Release/AU/Diamond Room.component' \
             "$HOME/Library/Audio/Plug-Ins/Components/Diamond Room.component"
+          # The hosted runner may already have a registrar with a stale AU list.
+          # Refresh only this disposable CI user's registrar, then wait for discovery.
+          plutil -p "$HOME/Library/Audio/Plug-Ins/Components/Diamond Room.component/Contents/Info.plist"
+          killall -u "$(id -un)" -9 AudioComponentRegistrar 2>/dev/null || true
+          discovered=false
+          for attempt in {1..15}; do
+            auval -a > build/au-components.txt 2>&1
+            if grep -Eq 'aufx[[:space:]]+Dmrm[[:space:]]+Znxa' build/au-components.txt; then
+              discovered=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$discovered" != true ]]; then
+            cat build/au-components.txt
+            echo 'Diamond Room AU was not registered after installation.' >&2
+            exit 1
+          fi
+          # Run actual validation once; do not retry or hide a validation failure.
           auval -v aufx Dmrm Znxa
 
       - name: Package complete plugin bundles
