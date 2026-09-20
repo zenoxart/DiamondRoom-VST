@@ -105,7 +105,7 @@ jobs:
         run: |
           for bundle in 'build/DiamondRoom_artefacts/Release/VST3/Diamond Room.vst3' \
                         'build/DiamondRoom_artefacts/Release/AU/Diamond Room.component'; do
-            lipo -verify_arch arm64 x86_64 "$bundle/Contents/MacOS/Diamond Room"
+            lipo "$bundle/Contents/MacOS/Diamond Room" -verify_arch arm64 x86_64
             codesign --force --deep --sign - "$bundle"
             codesign --verify --deep --strict "$bundle"
           done
