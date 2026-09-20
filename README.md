@@ -1,198 +1,179 @@
-# Diamond Room
+<div align="center">
 
-A JUCE/C++ VST3 rebuild of the `DiamondRoom.fst` FL Studio Patcher preset: four
-parallel reverbs fed from a saturation stage, summed through a valve
-compressor, on a single 4U rack panel cut from crystal.
+# DIAMOND ROOM
 
-Everything is native DSP - the plugin has no dependency on Waves, Valhalla or
-FL Studio, and does not host or require the original plugins.
+**Reflect · Shape · Space**
 
-![Diamond Room plugin interface](docs/images/diamond-room.png)
+Four parallel reverbs. Harmonic drive. Blended tube colour.
 
-The complete crystal background frames the controls, with its title and side
-branding built into the artwork. The control panels fit the inner frame at all window sizes.
+[![Build VST3](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml)
+![Format](https://img.shields.io/badge/format-VST3-aed9ef?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Windows_x64-91b6d1?style=flat-square)
+![Built with JUCE](https://img.shields.io/badge/built_with-JUCE_8-637e99?style=flat-square)
 
-## Signal flow
+### [↓ Download VST3 for Windows](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip)
 
-Rebuilt from the Patcher routing:
+[Build details & checksum](https://github.com/zenoxart/DiamondRoom-VST/releases/tag/latest-build) · [Installation](#installation) · [Controls](#controls) · [Build from source](#development)
 
-```
-in ─ Driver ─┬───────────────────────────────────── dry ──┐
-             │                                            │
-             ├─ H-Reverb ──── H-Mix ────┐                  │
-             ├─ MannyM Reverb ─ Mix ────┤                  │
-             ├─ Valhalla Verb ─ Mix ────┼─ Sum ─┬──────────┤
-             └─ True Verb ───── Mix ────┘       │          │
-                                                └─ Tube ───┤
-                                                           │
-                                                  Mix (dry/wet) ─ out
-```
+</div>
 
-The Patcher fed only the reverbs from the Driver, leaving the dial inaudible at
-anything but a very wet Mix. Here it sits ahead of the split, so Drive colours
-the whole signal.
+![Diamond Room — crystal rack interface with Drive, four reverb sections, Tube and master Mix](docs/images/diamond-room.png)
 
-`Tube` is the valve stage from CleanVoice, ported unchanged, with the dial as
-its Mix: at 0 the sum passes through untouched, at 10 the stage is fully in
-circuit. In CleanVoice it is a switch; here it can be blended.
+Diamond Room brings the `DiamondRoom.fst` FL Studio Patcher concept into a
+self-contained JUCE/C++ plugin. Blend four reverb characters, push the entire
+signal through Drive, and add tube compression to the reverb sum.
+
+All audio processing is native. Waves, Valhalla and FL Studio are not required.
+The reverbs are custom implementations inspired by the original chain, not the
+original commercial plugins.
+
+## The sound
+
+| Shape | Space | Character |
+| :--- | :--- | :--- |
+| **Drive** adds even and odd harmonics, with darker highs as you push it. | **Four parallel reverbs** give you separate tone, time, character and level controls. | **Tube** blends the CleanVoice valve stage into the combined reverb signal. |
+| Oversampled saturation with automatic level compensation. | Enable each section independently and blend with the master Mix. | Eight factory presets, undo/redo and a resizable crystal interface. |
+
+## Installation
+
+1. **[Download the Windows x64 VST3 ZIP](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip)** and extract it.
+2. Close your DAW, then copy the **entire `Diamond Room.vst3` folder** into:
+   ```text
+   C:\Program Files\Common Files\VST3\
+   ```
+3. Open your DAW and rescan VST3 plugins. In FL Studio, open **Options → Manage plugins → Find installed plugins**.
+4. Add **Diamond Room** to a mixer effect slot.
+
+Keep the `Contents` folder inside the VST3 bundle intact. Replacing an older
+version requires closing the DAW first.
+
+**Download channel:** unsigned Windows x64 development build. The link above
+updates after each successful `main` build. The release page includes the exact
+commit and SHA-256 checksum. macOS and Linux binaries are not currently provided.
 
 ## Controls
 
-| Control | Range | What it does |
-| --- | --- | --- |
-| Drive | 0–10 | Aggressive valve overdrive over the whole signal: even and odd harmonics, progressively darker, level held constant, 4x oversampled |
-| H-Reverb Tone | ±10 | Tilt around 900 Hz on the H-Reverb tail |
-| H-Reverb Time | 0–10 | RT60, 0.25 s to 10 s (preset value 3.24 s ≈ 6.9) |
-| MannyM Distortion | 0–10 | Saturation on the chamber output |
-| MannyM Amount | 0–10 | Chamber density and level |
-| Valhalla HighCut | 0–10 | 1 kHz to 20 kHz (preset value 16.4 kHz ≈ 9.3) |
-| Valhalla Decay | 0–10 | 0.3 s to 9 s (preset value 2.23 s ≈ 5.9) |
-| True Verb Distance | 0–10 | 0.5 m to 30 m; sets early/tail balance and air absorption |
-| True Verb Roomsize | 0–10 | 200 m³ to 30000 m³; sets reflection spacing, tank length and decay (0.5 s to 1.9 s) |
-| Tube | 0–10 | Mix of the CleanVoice valve compressor on the reverb sum |
-| Section LEDs | on/off | Arm each reverb |
-| H-Mix … TrueVerb Mix | 0–100 % | Level of each reverb into the sum |
-| Mix | 0–100 % | Master dry/wet |
+| Section | Controls | Character |
+| :--- | :--- | :--- |
+| **Drive** | Drive · 0–10 | Saturation and progressively darker highs across the entire signal, including the dry path. |
+| **H-Reverb** | Tone · Time · H-Mix | Hall-style tail with tonal shaping and early reflections. |
+| **MannyM Reverb** | Distortion · Amount · Mix | Chamber character with output saturation and density control. |
+| **Valhalla Reverb** | HighCut · Decay · Mix | Modulated hall with adjustable brightness and tail length. |
+| **True Verb** | Distance · Roomsize · Mix | Room reflections, depth and air absorption. |
+| **Tube** | Tube · 0–10 | Blend of the CleanVoice valve compressor on the reverb sum; 0 bypasses it, 10 applies it fully. |
+| **Master** | Mix · 0–100% | Blend between the driven dry signal and the processed reverb sum. |
 
-Along the top rail: undo and redo, preset stepping either side of the preset
-name, and a settings gear. Clicking the preset name opens the full list, plus
-**Save as...**, **Delete** for user presets, and **Show preset folder**.
+The glowing LEDs switch individual reverbs on and off. Section mix faders set
+each reverb's contribution to the sum.
 
-## Presets
-
-Eight factory presets ship with the plugin, from **Subtle Air** through the
-**Diamond Room** default to **Crushed Verb**. User presets are written to
-`%APPDATA%/DiamondRoom/Presets` as `.drpreset` XML and appear under **User** in
-the same menu. A preset whose controls have since been moved is shown with a
-trailing asterisk.
-
-The window size is remembered in the plugin state, so a session reopens at the
-size it was closed at. The gear menu offers five sizes, and the window can also
-be dragged from its corner; the aspect ratio is fixed.
-
-Undo and redo cover parameter moves, reverb on/off switches and preset loads.
-One gesture is one step: dragging a fader from end to end is a single undo, not
-a hundred.
-
-Factory defaults are taken from the presets saved in the `.fst`: H-Reverb "Focused Lead
-Vocal", MannyM "Dave Aron - Rock Vocal Hall 1", Valhalla "VaViRb_Vox_9" (Concert
-Hall / 1970s), TrueVerb "Vocal spread".
-
-## Building
-
-Needs CMake 3.22+ and a C++17 compiler. JUCE 8.0.4 is expected in `JUCE/`:
-
-```bash
-git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git JUCE
+```mermaid
+flowchart LR
+    IN[Input] --> DRIVE[Drive]
+    DRIVE --> DRY[Dry path]
+    DRIVE --> H[H-Reverb]
+    DRIVE --> M[MannyM Reverb]
+    DRIVE --> V[Valhalla Reverb]
+    DRIVE --> T[True Verb]
+    H --> SUM[Section mixes + sum]
+    M --> SUM
+    V --> SUM
+    T --> SUM
+    SUM --> TUBE[Tube blend]
+    DRY --> MIX[Master Mix]
+    TUBE --> MIX
+    MIX --> OUT[Output]
 ```
 
-Then:
+## Presets & workflow
 
-```bash
-cmake -B build -G "Visual Studio 17 2022" -A x64
+Start with **Diamond Room**, **Vocal Plate**, **Tight Room**, **Cathedral**,
+**Dark Chamber**, **Driven Wash**, **Crushed Verb** or **Subtle Air**.
+
+- Click the preset name to load, save or delete a user preset. The arrows step through presets.
+- Use undo and redo for parameter edits and preset changes. Each drag is one undo step.
+- Choose a window size with the gear menu or resize from the corner. The size is saved with the session.
+- User presets live in `%APPDATA%\DiamondRoom\Presets` as `.drpreset` files. An asterisk marks an edited preset.
+
+## Automated builds
+
+Every branch push and pull request triggers the [Windows build workflow](https://github.com/zenoxart/DiamondRoom-VST/actions/workflows/build.yml).
+It checks out the pinned JUCE version, compiles the VST3, runs the offline checks,
+and packages the complete plugin bundle. Each successful build has a downloadable
+artifact retained for 30 days.
+
+Successful builds on `main` also update the **[public VST3 download](https://github.com/zenoxart/DiamondRoom-VST/releases/download/latest-build/DiamondRoom-Windows-x64.zip)**.
+Pull requests and other branches never replace that download. The workflow can
+also be started manually from the Actions tab.
+
+## Development
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+Requires CMake 3.22+, Visual Studio 2022 with C++ tools, and JUCE 8.0.4.
+
+```powershell
+git clone https://github.com/zenoxart/DiamondRoom-VST.git
+cd DiamondRoom-VST
+git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git JUCE
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DDIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=OFF
 cmake --build build --config Release
 ```
 
-VST3 and a standalone app are produced under
-`build/DiamondRoom_artefacts/Release/`. The VST3 is copied to the system plugin
-folder automatically (`COPY_PLUGIN_AFTER_BUILD`).
+The VST3 and standalone app are generated under `build/DiamondRoom_artefacts/Release/`.
+Set `DIAMONDROOM_COPY_PLUGIN_AFTER_BUILD=ON` to copy the VST3 into the system plugin
+folder after building. This is the default for local builds; CI disables it.
 
-If a host still has the plugin loaded, that copy fails with a long MSB3073 error
-even though the build itself succeeded - Windows will not overwrite a DLL that is
-mapped into a running process. Close the host and build again.
+All artwork is embedded, including the complete crystal background. No external
+image files or image-processing tools are needed to run or build the plugin.
 
-All required artwork is included in `Assets/` and embedded in the plugin.
-A normal build does not need Python, OpenCV or external image files.
+</details>
 
-## Development helper
+<details>
+<summary><strong>Run checks & refresh the screenshot</strong></summary>
 
-`Tools/RenderEditor.cpp` builds as an optional console app that renders the
-editor to a PNG and runs an offline DSP check (tail decay, headroom, no
-non-finite samples) without needing a host:
-
-```bash
-cmake -B build -DDIAMONDROOM_BUILD_SCREENSHOT=ON
+```powershell
+cmake -S . -B build -DDIAMONDROOM_BUILD_SCREENSHOT=ON
 cmake --build build --config Release --target DiamondRoomShot
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --audio
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --ui
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --drive
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --tube
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --presets
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe --lifecycle
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe panel.png 2001
+$tool = './build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe'
+& $tool --audio
+& $tool --ui
+& $tool --drive
+& $tool --tube
+& $tool --presets
+& $tool --lifecycle
+& $tool docs/images/diamond-room.png 1600
 ```
 
-`--ui` checks that every fader's drawn cap and its draggable region agree at
-several window sizes. That one is worth keeping: a `Slider` subclass that
-overrides `resized()` without calling the base leaves JUCE's draggable region
-one pixel wide, and the fader becomes impossible to set.
+| Check | Coverage |
+| :--- | :--- |
+| `--audio` | Tail decay, headroom and finite output samples. |
+| `--ui` | Fader drawing and mouse alignment at multiple sizes. |
+| `--drive` | Harmonics, level compensation and high-frequency darkening. |
+| `--tube` | Bypass, compression and blend behaviour. |
+| `--presets` | Preset save/load, undo/redo and saved window size. |
+| `--lifecycle` | 30 processor removals, 60 editor closures and five GUI shutdown cycles. |
 
-`--drive` runs an FFT over the Drive stage and reports even and odd harmonic
-content, level change and high-band tilt at several settings. Both tone and
-level have to be measured on noise rather than on a sine: a sine sits below the
-tone filtering, so it shows neither the level the filtering costs on real
-material nor the darkening itself, since adding harmonics to a sine raises its
-spectral centroid however dark the stage is.
+These are offline checks. DAW-specific behaviour still needs host testing.
+The preset check creates and removes a temporary preset in the user preset folder.
 
-At Drive 0 / 10 it currently reports:
+</details>
 
-| | 0 | 10 |
-| --- | --- | --- |
-| even harmonics | -144 dBc | -12.5 dBc |
-| odd harmonics | -144 dBc | -8.8 dBc |
-| broadband level | 0 dB | 0 dB |
-| high band tilt | +10.4 dB | -10.0 dB |
+<details>
+<summary><strong>Project structure</strong></summary>
 
-`--tube` checks Mix 0 is a bit-exact bypass and Mix 10 both compresses and
-stays roughly level-neutral at the -14 dBFS its make-up is designed around.
-
-`--presets` round-trips the preset store, checks undo and redo restore parameter
-values, and checks the remembered window size survives a state save and reload.
-
-`--lifecycle` exercises 30 processor removals, 60 editor closures and five
-GUI shutdown/reinitialisation cycles, including pending parameter notifications.
-This is an offline lifecycle check; host-specific crashes still require testing in the DAW.
-
-## Layout
-
-```
-Source/
-  PluginProcessor.*     chain wiring, dry-delay compensation, master mix
-  PluginEditor.*        rack panel layout, frame, preset and settings menus
-  Parameters.*          parameter layout and cached atomics
-  PresetManager.*       factory tables and the user preset store
-  dsp/
-    DspUtils.h          filters, delay lines, all-passes, FDN mixing
-    OneKnobDriver.*     Drive
-    HReverb.*           FDN hall with early reflections and tail compression
-    MannyMReverb.*      chamber with output distortion and phaser
-    ValhallaVerb.*      Concert Hall, 1970s colour
-    TrueVerb.*          geometric room simulator
-    CleanVoiceTube.*    CleanVoice's valve compressor, behind a Mix control
-  gui/
-    Theme.*             brushed metal plates, screws, text
-    MetalKnob.*         MetalSlider.*      PanelSection.*
-    RackButton.*        top rail switches and the preset name plate
-Assets/                 complete background and control artwork - see below
+```text
+Source/       Processor, editor, parameters and presets
+  dsp/        Drive, four reverbs and the CleanVoice valve stage
+  gui/        Knobs, faders, panels and drawing helpers
+Assets/       Embedded background and control artwork
+Tools/        Offscreen renderer and offline checks
+docs/images/ README screenshot
+.github/      Windows build and download publishing workflow
 ```
 
-### Artwork
+</details>
 
-The plugin embeds the supplied complete background as `Assets/PanelBackground.png`.
-It includes the crystal frame, title, tagline and side branding; these are not
-redrawn over the image. The interactive control plates, labels and controls
-are drawn above the background and fitted to its inner frame.
+---
 
-- `PanelBackground.png` - the complete background artwork.
-- `KnobBody.png` - the knob face, with a live parameter pointer drawn over it.
-- `FaderGemSection.png` / `FaderGemMaster.png` - the section and master fader caps.
-
-Assets are shared through JUCE's image cache and scaled to the current window
-size. Their lifetime follows JUCE's cache rather than static image objects
-that would retain graphics resources until the plugin library unloads.
-
-The README screenshot is rendered from the actual editor. To refresh it:
-
-```bash
-./build/DiamondRoomShot_artefacts/Release/DiamondRoomShot.exe docs/images/diamond-room.png 1600
-```
+Project code: [MIT](LICENSE). JUCE and other dependencies retain their own licences.
