@@ -13,6 +13,7 @@
            DiamondRoomShot --tube           (CleanVoice valve stage and its Mix)
 */
 
+#include <algorithm>
 #include <iomanip>
 #include <map>
 
@@ -111,7 +112,7 @@ namespace
         for (auto s : captured)
             sumSquares += (double) s * s;
 
-        const auto outRms = (float) std::sqrt (sumSquares / juce::jmax<size_t> (1, captured.size()));
+        const auto outRms = (float) std::sqrt (sumSquares / std::max<size_t> (1, captured.size()));
         const auto inRms = amplitude * juce::MathConstants<float>::sqrt2 * 0.5f;
 
         DriveSpectrum result;
@@ -185,7 +186,7 @@ namespace
         for (auto sample : captured)
             sumSquares += (double) sample * sample;
 
-        const auto outRms = std::sqrt (sumSquares / juce::jmax<size_t> (1, captured.size()));
+        const auto outRms = std::sqrt (sumSquares / std::max<size_t> (1, captured.size()));
         const auto inRms = 0.126 / std::sqrt (3.0);   // uniform noise
 
         NoiseResult result;
